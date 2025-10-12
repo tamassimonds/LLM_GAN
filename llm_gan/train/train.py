@@ -91,8 +91,8 @@ lora_config = LoraConfig(
     lora_dropout=0.1,
 )
 
-generator_model = get_peft_model(generator_model, lora_config)
 generator_ppo_model = AutoModelForCausalLMWithValueHead.from_pretrained(generator_model)
+generator_ppo_model = get_peft_model(generator_ppo_model, lora_config)
 
 
 
