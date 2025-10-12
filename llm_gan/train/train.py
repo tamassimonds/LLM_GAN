@@ -74,13 +74,13 @@ if tokenizer.pad_token is None:
 
 generator_model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    torch_dtype=torch.float16,
+    dtype=torch.float16,
     device_map="auto"
 )
 
 judge_model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    torch_dtype=torch.float16,
+    dtype=torch.float16,
     device_map="auto"
 )
 
@@ -100,9 +100,9 @@ generator_ppo_model = get_peft_model(generator_ppo_model, lora_config)
 
 ppo_config = PPOConfig(
     learning_rate=1.41e-5,
-    batch_size=bs//4,
-    mini_batch_size=bs//8,
-    ppo_epochs=4,
+    per_device_train_batch_size=bs//4,
+    num_mini_batches=4,
+    num_ppo_epochs=4,
 )
 
 ppo_trainer = PPOTrainer(
