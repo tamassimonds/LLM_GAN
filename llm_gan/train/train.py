@@ -94,6 +94,18 @@ lora_config = LoraConfig(
 generator_ppo_model = AutoModelForCausalLMWithValueHead.from_pretrained(generator_model)
 generator_ppo_model = get_peft_model(generator_ppo_model, lora_config)
 
+# Fix generation config issue
+if not hasattr(generator_ppo_model, 'generation_config'):
+    from transformers import GenerationConfig
+    generator_ppo_model.generation_config = GenerationConfig.from_pretrained(model_name)
+
+# Setup judge with PPO
+judge_ppo_model = AutoModelForCausalLMWithValueHead.from_pretrained(judge_model)
+judge_ppo_model = get_peft_model(judge_ppo_model, lora_config)
+
+if not hasattr(judge_ppo_model, 'generation_config'):
+    judge_ppo_model.generation_config = GenerationConfig.from_pretrained(model_name)
+
 
 
 
@@ -109,18 +121,37 @@ ppo_config = PPOConfig(
     response_length=200,
 )
 
-ppo_trainer = PPOTrainer(
+generator_ppo_trainer = PPOTrainer(
     args=ppo_config,
     processing_class=tokenizer,
     model=generator_ppo_model,
     ref_model=None,
-    reward_model=judge_model,
+    reward_model=judge_ppo_model,
     train_dataset=dataset,
     value_model=None,
 )
 
-judge_optimizer = torch.optim.AdamW(judge_model.parameters(), lr=1e-5)
-criterion = torch.nn.CrossEntropyLoss()
+judge_ppo_config = PPOConfig(
+    output_dir="./judge_ppo_output",
+    learning_rate=1e-5,
+    per_device_train_batch_size=bs//4,
+    num_mini_batches=4,
+    num_ppo_epochs=4,
+    gradient_accumulation_steps=1,
+    total_episodes=epochs * len(dataloader),
+    response_length=200,
+)
+
+judge_ppo_trainer = PPOTrainer(
+    args=judge_ppo_config,
+    processing_class=tokenizer,
+    model=judge_ppo_model,
+    ref_model=None,
+    reward_model=None,
+    train_dataset=dataset,
+    value_model=None,
+)
+
 
 print("Starting training...")
 for epoch in range(epochs):
@@ -139,7 +170,7 @@ for epoch in range(epochs):
             tokens = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True)
             query_tensors.append(tokens['input_ids'].squeeze())
         
-        response_tensors = ppo_trainer.generate(
+        response_tensors = generator_ppo_trainer.generate(
             query_tensors,
             max_new_tokens=200,
             do_sample=True,
@@ -156,7 +187,7 @@ for epoch in range(epochs):
             generated_stories.append(story)
         
         judge_correct = assess_judge(
-            titles, genres, human_stories, generated_stories, judge_model, tokenizer
+            titles, genres, human_stories, generated_stories, judge_ppo_model, tokenizer
         )
         
         generator_fooled_judge = [not correct for correct in judge_correct]
@@ -166,28 +197,37 @@ for epoch in range(epochs):
         
         rewards_tensor = [torch.tensor([reward], dtype=torch.float) for reward in generator_rewards]
         
-        stats = ppo_trainer.step(query_tensors, response_tensors, rewards_tensor)
+        gen_stats = generator_ppo_trainer.step(query_tensors, response_tensors, rewards_tensor)
         
-        judge_targets = torch.tensor([1 if correct else 0 for correct in judge_correct], dtype=torch.long)
+        # Train judge with PPO - rewards based on accuracy
+        judge_query_tensors = []
+        for prompt in [llm_generator_discriminator_prompt(t, g, h, gs) for t, g, h, gs in zip(titles, genres, human_stories, generated_stories)]:
+            tokens = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True)
+            judge_query_tensors.append(tokens['input_ids'].squeeze())
         
-        judge_loss = criterion(torch.randn(len(judge_correct), 2), judge_targets)
+        judge_response_tensors = judge_ppo_trainer.generate(
+            judge_query_tensors,
+            max_new_tokens=200,
+            do_sample=True,
+            temperature=0.3,
+            pad_token_id=tokenizer.pad_token_id
+        )
         
-        judge_optimizer.zero_grad()
-        judge_loss.backward()
-        judge_optimizer.step()
+        judge_rewards_tensor = [torch.tensor([reward], dtype=torch.float) for reward in judge_rewards]
+        judge_stats = judge_ppo_trainer.step(judge_query_tensors, judge_response_tensors, judge_rewards_tensor)
         
-        epoch_judge_loss += judge_loss.item()
+        epoch_judge_loss += np.mean(judge_rewards)
         epoch_generator_reward += np.mean(generator_rewards)
         
         if batch_idx % 10 == 0:
             accuracy = sum(judge_correct) / len(judge_correct) if judge_correct else 0
-            print(f"Epoch {epoch}, Batch {batch_idx}: Judge Loss: {judge_loss.item():.4f}, Judge Acc: {accuracy:.4f}, Avg Gen Reward: {np.mean(generator_rewards):.4f}")
+            print(f"Epoch {epoch}, Batch {batch_idx}: Judge Acc: {accuracy:.4f}, Avg Judge Reward: {np.mean(judge_rewards):.4f}, Avg Gen Reward: {np.mean(generator_rewards):.4f}")
     
-    print(f"Epoch {epoch} Summary - Judge Loss: {epoch_judge_loss/len(dataloader):.4f}, Generator Reward: {epoch_generator_reward/len(dataloader):.4f}")
+    print(f"Epoch {epoch} Summary - Judge Reward: {epoch_judge_loss/len(dataloader):.4f}, Generator Reward: {epoch_generator_reward/len(dataloader):.4f}")
     
     if epoch % 10 == 0:
-        torch.save(generator_model.state_dict(), f"generator_epoch_{epoch}.pt")
-        torch.save(judge_model.state_dict(), f"judge_epoch_{epoch}.pt")
+        generator_ppo_model.save_pretrained(f"generator_epoch_{epoch}")
+        judge_ppo_model.save_pretrained(f"judge_epoch_{epoch}")
 
 print("Training completed!")
 
