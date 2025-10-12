@@ -63,6 +63,10 @@ for _ in range(epochs):
 
         judge_results = asses_judge(input["title"], input["genre"], orginal_stories, generator_stories)
 
+        generator_results = 
+
+        
+
 
         
 
