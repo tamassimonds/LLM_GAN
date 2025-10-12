@@ -99,7 +99,6 @@ generator_ppo_model = get_peft_model(generator_ppo_model, lora_config)
 
 
 ppo_config = PPOConfig(
-    model_name=model_name,
     learning_rate=1.41e-5,
     batch_size=bs//4,
     mini_batch_size=bs//8,
