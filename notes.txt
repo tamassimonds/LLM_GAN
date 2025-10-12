@@ -1,0 +1,4 @@
+
+GRPO application in binary classification RL seems hard to justify theoretically 
+
+PPO seems to be a safe alternative

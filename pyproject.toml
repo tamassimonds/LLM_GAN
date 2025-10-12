@@ -1,0 +1,12 @@
+[project]
+name = "llm-gan"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "datasets>=4.1.0",
+    "openai>=2.3.0",
+    "torch>=2.8.0",
+    "transformers>=4.57.0",
+]
