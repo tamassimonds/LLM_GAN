@@ -99,16 +99,24 @@ generator_ppo_model = get_peft_model(generator_ppo_model, lora_config)
 
 
 ppo_config = PPOConfig(
+    output_dir="./ppo_output",
     learning_rate=1.41e-5,
     per_device_train_batch_size=bs//4,
     num_mini_batches=4,
     num_ppo_epochs=4,
+    gradient_accumulation_steps=1,
+    total_episodes=epochs * len(dataloader),
+    response_length=200,
 )
 
 ppo_trainer = PPOTrainer(
-    config=ppo_config,
+    args=ppo_config,
+    processing_class=tokenizer,
     model=generator_ppo_model,
-    tokenizer=tokenizer,
+    ref_model=None,
+    reward_model=judge_model,
+    train_dataset=dataset,
+    value_model=None,
 )
 
 judge_optimizer = torch.optim.AdamW(judge_model.parameters(), lr=1e-5)
