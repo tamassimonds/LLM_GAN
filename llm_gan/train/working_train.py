@@ -31,7 +31,15 @@ def assess_judge(titles, genres, stories_human, stories_ai, judge_model, tokeniz
     
     parsed_outputs = []
     for output in judge_outputs:
-        answer = parse_tags(output, "answer")
+        # Get all answer tags and take the last valid one
+        all_answers = parse_tags(output, "answer")
+        
+        # If multiple answers, take the last one
+        if isinstance(all_answers, list) and len(all_answers) > 0:
+            answer = all_answers[-1]  # Take last answer
+        else:
+            answer = all_answers  # Single answer or None
+        
         if answer == "1":
             parsed_outputs.append(0)
         elif answer == "2":
@@ -60,7 +68,15 @@ def assess_judge_with_outputs(titles, genres, stories_human, stories_ai, judge_m
     
     parsed_outputs = []
     for output in judge_outputs:
-        answer = parse_tags(output, "answer")
+        # Get all answer tags and take the last valid one
+        all_answers = parse_tags(output, "answer")
+        
+        # If multiple answers, take the last one
+        if isinstance(all_answers, list) and len(all_answers) > 0:
+            answer = all_answers[-1]  # Take last answer
+        else:
+            answer = all_answers  # Single answer or None
+        
         if answer == "1":
             parsed_outputs.append(0)
         elif answer == "2":
@@ -145,16 +161,35 @@ for epoch in range(epochs):
         
         generated_stories = []
         for story_text in generated_stories_raw:
+            # First try to get story from <story> tags
             story = parse_tags(story_text, "story")
+            
             if story is None:
-                # Better fallback parsing
-                if "ASSISTANT>" in story_text:
-                    story = story_text.split("ASSISTANT>")[-1].strip()
+                # Try to get content from <STORY> tags (uppercase)
+                story = parse_tags(story_text, "STORY")
+            
+            if story is None:
+                # Look for content after assistant header
+                if "<|start_header_id|>assistant<|end_header_id|>" in story_text:
+                    content = story_text.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
+                elif "assistant<|end_header_id|>" in story_text:
+                    content = story_text.split("assistant<|end_header_id|>")[-1].strip()
                 else:
-                    story = story_text.strip()
-                # Clean up any remaining XML/structure
-                story = story.replace('</', '').replace('<', '').replace('>', '')
-                story = ' '.join(story.split())[:512]  # Clean whitespace and limit length
+                    content = story_text.strip()
+                
+                # Skip if it's clearly UI elements or too short
+                if content and "BUTTON" not in content and "OUTPUT" not in content and len(content) > 20:
+                    story = content
+                else:
+                    story = f"A {genres[0].lower()} story about {titles[0]}."  # Fallback
+                
+                # Clean up but preserve readability
+                if story and len(story) > 10:
+                    # Remove excessive whitespace but keep structure
+                    story = ' '.join(story.split())[:512]
+                else:
+                    story = f"A {genres[0].lower()} story titled '{titles[0]}'."  # Safe fallback
+                    
             generated_stories.append(story)
         
         print("  Judging stories...")

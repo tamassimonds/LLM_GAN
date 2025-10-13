@@ -3,36 +3,33 @@
 
 
 def llm_generator_discriminator_prompt(title, genre, story1, story2): 
-    return f""" 
-    <USER>
-    You will be given two sample outputs. Your goal is to select which one if formulated by a human and which one by ai
-    title: {title}
-    genre: {genre}
+    return f"""<|begin_of_text|><|start_header_id|>user<|end_header_id|>
 
-    STORY 1
-    {story1}
+You need to determine which story was written by a human and which by AI.
 
-    STORY 2
-    {story2}
+Title: {title}
+Genre: {genre}
 
-    Reason first then output  1 or 2 in answer tags e.g corresponding to story 1 or 2
-    Example output: <answer>1</answer>
-    </USER>
-    <ASSISTANT>
-    """
+STORY 1:
+{story1}
+
+STORY 2:
+{story2}
+
+Think about which story feels more human-like in terms of style, creativity, and naturalness.
+
+Give your reasoning briefly, then answer with <answer>1</answer> or <answer>2</answer> to indicate which story is human-written.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+"""
 
 def llm_generator_prompt(title, genre): 
-    return f"""
-    <USER>
-    Your goal is to genreate a story that is as human like as possible. You may plan before writting
+    return f"""<|begin_of_text|><|start_header_id|>user<|end_header_id|>
 
-    Then write in the tags below output your final story
+Write a creative story in the {genre} genre with the title "{title}". 
 
-    The sample title is {title}
+Make the story feel human-written and engaging. Write approximately 200-300 words.
 
-    The genre of the story is {genre}
+Put your story inside <story> tags like this:
+<story>Your story here</story><|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
-    <story>Put your final story inside story tags</story>
-    </USER>
-    <ASSISTANT>
-    """
+"""
