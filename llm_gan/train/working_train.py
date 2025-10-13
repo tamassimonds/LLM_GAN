@@ -9,7 +9,7 @@ import os
 from datetime import datetime
 
 from llm_gan.prompts import llm_generator_prompt, llm_generator_discriminator_prompt
-from llm_gan.utils.parse import parse_tags
+from llm_gan.utils.parse import parse_tags, parse_boxed
 from .dataset import StoryDataset
 
 
@@ -82,14 +82,16 @@ def assess_judge(titles, genres, stories_human, stories_ai, judge_model, tokeniz
     
     parsed_outputs = []
     for output in judge_outputs:
-        # Get all answer tags and take the last valid one
-        all_answers = parse_tags(output, "answer")
-        
-        # If multiple answers, take the last one
-        if isinstance(all_answers, list) and len(all_answers) > 0:
-            answer = all_answers[-1]  # Take last answer
+        # Extract content after assistant header to get just the response
+        if "assistant<|end_header_id|>" in output:
+            response = output.split("assistant<|end_header_id|>")[-1].strip()
+        elif "<|start_header_id|>assistant<|end_header_id|>" in output:
+            response = output.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
         else:
-            answer = all_answers  # Single answer or None
+            response = output.strip()
+        
+        # Parse boxed answer from the response only
+        answer = parse_boxed(response)
         
         if answer == "1":
             parsed_outputs.append(0)
@@ -120,14 +122,16 @@ def assess_judge_with_outputs(titles, genres, stories_human, stories_ai, judge_m
     
     parsed_outputs = []
     for output in judge_outputs:
-        # Get all answer tags and take the last valid one
-        all_answers = parse_tags(output, "answer")
-        
-        # If multiple answers, take the last one
-        if isinstance(all_answers, list) and len(all_answers) > 0:
-            answer = all_answers[-1]  # Take last answer
+        # Extract content after assistant header to get just the response
+        if "assistant<|end_header_id|>" in output:
+            response = output.split("assistant<|end_header_id|>")[-1].strip()
+        elif "<|start_header_id|>assistant<|end_header_id|>" in output:
+            response = output.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
         else:
-            answer = all_answers  # Single answer or None
+            response = output.strip()
+        
+        # Parse boxed answer from the response only
+        answer = parse_boxed(response)
         
         if answer == "1":
             parsed_outputs.append(0)
@@ -232,6 +236,12 @@ def reinforce_update(model, optimizer, log_probs, rewards):
     
     optimizer.step()
     
+    # Validate model parameters after update
+    for name, param in model.named_parameters():
+        if not torch.isfinite(param).all():
+            print(f"ERROR: Model parameter {name} became corrupted after REINFORCE update!")
+            return 0.0  # Skip this update
+    
     return policy_loss.item()
 
 
@@ -257,12 +267,12 @@ if tokenizer.pad_token is None:
 
 generator_model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    dtype=torch.bfloat16,
+    dtype=torch.float32,
     device_map="auto"
 )
 judge_model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    dtype=torch.bfloat16,
+    dtype=torch.float32,
     device_map="auto"
 )
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -276,6 +286,18 @@ os.makedirs(log_dir, exist_ok=True)
 
 print(f"Starting training with {len(dataset)} samples, {len(dataloader)} batches...")
 print(f"Logging to: {log_dir}")
+
+# Test if models are corrupted from the start
+print("Testing model integrity...")
+for name, param in generator_model.named_parameters():
+    if not torch.isfinite(param).all():
+        print(f"ERROR: Generator model parameter {name} contains inf/nan values at startup!")
+        
+for name, param in judge_model.named_parameters():
+    if not torch.isfinite(param).all():
+        print(f"ERROR: Judge model parameter {name} contains inf/nan values at startup!")
+
+print("Models loaded successfully, starting training...")
 for epoch in range(epochs):
     epoch_judge_accuracy = 0
     epoch_generator_reward = 0
@@ -348,9 +370,14 @@ for epoch in range(epochs):
             generated_stories.append(story)
         
         print("  Judging stories...")
+        # Clip stories to equal length for fair comparison
+        max_story_length = 500  # Max characters per story
+        clipped_human_stories = [story[:max_story_length] for story in human_stories]
+        clipped_generated_stories = [story[:max_story_length] for story in generated_stories]
+        
         # Judge the stories (modified to return judge outputs too)
         judge_correct, judge_outputs = assess_judge_with_outputs(
-            titles, genres, human_stories, generated_stories, judge_model, tokenizer
+            titles, genres, clipped_human_stories, clipped_generated_stories, judge_model, tokenizer
         )
         
         generator_fooled_judge = [not correct for correct in judge_correct]

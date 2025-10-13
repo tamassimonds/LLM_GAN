@@ -6,6 +6,7 @@ import re
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 _TAG_PATTERN = re.compile(r"<(?P<tag>[A-Za-z0-9_:-]+)>(?P<content>.*?)</(?P=tag)>", re.DOTALL)
+_BOXED_PATTERN = re.compile(r"\\boxed\{([^}]+)\}", re.DOTALL)
 
 ParsedTags = Dict[str, Union[str, List[str]]]
 
@@ -78,3 +79,25 @@ def parse_tags(
         return extracted[0]
 
     return tuple(extracted)
+
+
+def parse_boxed(text: str) -> Optional[str]:
+    """Extract content from \\boxed{} format.
+    
+    Parameters
+    ----------
+    text:
+        Input string that may contain \\boxed{content}.
+        
+    Returns
+    -------
+    str | None:
+        The content inside the last \\boxed{} found, or None if none found.
+    """
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    
+    matches = _BOXED_PATTERN.findall(text)
+    if matches:
+        return matches[-1].strip()  # Return the last match
+    return None
