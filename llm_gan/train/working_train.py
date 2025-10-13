@@ -250,7 +250,7 @@ bs = 32  # Small batch for large model
 epochs = 100  # Full training
 
 MAX_AGENT_TOKENS = 512
-MAX_JUDGE_TOKENS = 512
+MAX_JUDGE_TOKENS = 1024
 
 
 def collate_fn(batch):
@@ -267,12 +267,12 @@ if tokenizer.pad_token is None:
 
 generator_model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    dtype=torch.float32,
+    dtype=torch.bfloat16,
     device_map="auto"
 )
 judge_model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    dtype=torch.float32,
+    dtype=torch.bfloat16,
     device_map="auto"
 )
 torch.backends.cuda.matmul.allow_tf32 = True
