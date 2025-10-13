@@ -26,7 +26,7 @@ def assess_judge(titles, genres, stories_human, stories_ai, judge_model, tokeniz
         prompts, 
         model=judge_model, 
         tokenizer=tokenizer,
-        max_new_tokens=2048
+        max_new_tokens=256
     )
     
     parsed_outputs = []
@@ -55,7 +55,7 @@ def assess_judge_with_outputs(titles, genres, stories_human, stories_ai, judge_m
         prompts, 
         model=judge_model, 
         tokenizer=tokenizer,
-        max_new_tokens=2048
+        max_new_tokens=256
     )
     
     parsed_outputs = []
@@ -139,7 +139,7 @@ for epoch in range(epochs):
             generator_prompts,
             model=generator_model,
             tokenizer=tokenizer,
-            max_new_tokens=2048
+            max_new_tokens=512,
             temperature=0.8
         )
         
@@ -147,7 +147,14 @@ for epoch in range(epochs):
         for story_text in generated_stories_raw:
             story = parse_tags(story_text, "story")
             if story is None:
-                story = story_text.split("ASSISTANT>")[-1].strip()[:2048]  # Full length stories
+                # Better fallback parsing
+                if "ASSISTANT>" in story_text:
+                    story = story_text.split("ASSISTANT>")[-1].strip()
+                else:
+                    story = story_text.strip()
+                # Clean up any remaining XML/structure
+                story = story.replace('</', '').replace('<', '').replace('>', '')
+                story = ' '.join(story.split())[:512]  # Clean whitespace and limit length
             generated_stories.append(story)
         
         print("  Judging stories...")
