@@ -1,12 +1,122 @@
-# Python-generated files
+# Python
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
 wheels/
-*.egg-info
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
 # Virtual environments
+.env
 .venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# ML/AI specific
+# Model checkpoints and weights
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+*.h5
+*.pkl
+*.pickle
+
+# Hugging Face cache
+.cache/
+.huggingface/
+transformers_cache/
+
+# Weights & Biases
+wandb/
+
+# TensorBoard logs
+logs/
+tensorboard_logs/
+runs/
+
+# Training outputs
+checkpoints/
+saved_models/
+model_outputs/
+training_logs/
+results/
+
+# PPO training outputs
+ppo_output/
+judge_ppo_output/
+*_epoch_*.pt
+working_generator_epoch_*.pt
+working_judge_epoch_*.pt
+simple_generator_epoch_*.pt
+simple_judge_epoch_*.pt
+generator_epoch_*/
+judge_epoch_*/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# UV lock file
+uv.lock
+
+# API keys and secrets
 set_api_keys.sh
+.env
+*.key
+*.pem

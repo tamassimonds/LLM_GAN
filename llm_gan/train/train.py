@@ -67,44 +67,23 @@ epochs = 100
 dataset = StoryDataset("data/combined_eval_stories.csv")
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=bs, shuffle=True)
 
-model_name = "meta-llama/Llama-3.2-1B-Instruct"
+model_name = "gpt2"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-generator_model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    dtype=torch.float16,
-    device_map="auto"
-)
+generator_model = AutoModelForCausalLM.from_pretrained(model_name)
+judge_model = AutoModelForCausalLM.from_pretrained(model_name)
 
-judge_model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    dtype=torch.float16,
-    device_map="auto"
-)
-
-lora_config = LoraConfig(
-    r=16,
-    lora_alpha=32,
-    target_modules="all-linear",
-    lora_dropout=0.1,
-)
-
+# Create PPO models without PEFT for now (simpler setup)
 generator_ppo_model = AutoModelForCausalLMWithValueHead.from_pretrained(generator_model)
-generator_ppo_model = get_peft_model(generator_ppo_model, lora_config)
-
-# Fix generation config issue
-if not hasattr(generator_ppo_model, 'generation_config'):
-    from transformers import GenerationConfig
-    generator_ppo_model.generation_config = GenerationConfig.from_pretrained(model_name)
-
-# Setup judge with PPO
 judge_ppo_model = AutoModelForCausalLMWithValueHead.from_pretrained(judge_model)
-judge_ppo_model = get_peft_model(judge_ppo_model, lora_config)
 
-if not hasattr(judge_ppo_model, 'generation_config'):
-    judge_ppo_model.generation_config = GenerationConfig.from_pretrained(model_name)
+# Fix generation config
+from transformers import GenerationConfig
+gen_config = GenerationConfig.from_pretrained(model_name)
+generator_ppo_model.generation_config = gen_config
+judge_ppo_model.generation_config = gen_config
 
 
 
@@ -128,7 +107,7 @@ generator_ppo_trainer = PPOTrainer(
     ref_model=None,
     reward_model=judge_ppo_model,
     train_dataset=dataset,
-    value_model=None,
+    value_model=generator_ppo_model,
 )
 
 judge_ppo_config = PPOConfig(
@@ -147,9 +126,9 @@ judge_ppo_trainer = PPOTrainer(
     processing_class=tokenizer,
     model=judge_ppo_model,
     ref_model=None,
-    reward_model=None,
+    reward_model=generator_ppo_model,
     train_dataset=dataset,
-    value_model=None,
+    value_model=judge_ppo_model,
 )
 
 
