@@ -138,12 +138,14 @@ def calculate_log_probs(model, tokenizer, prompts, responses):
         response_tokens = full_tokens['input_ids'][0, prompt_length:]
         response_logits = logits[0, prompt_length-1:-1]  # Shift by 1 for next token prediction
         
-        # Calculate log probabilities
+        # Calculate log probabilities with numerical stability
         response_log_probs = F.log_softmax(response_logits, dim=-1)
         selected_log_probs = response_log_probs.gather(1, response_tokens.unsqueeze(1)).squeeze(1)
         
-        # Sum log probabilities for the response
+        # Sum log probabilities for the response with clamping for stability
         total_log_prob = selected_log_probs.sum()
+        total_log_prob = torch.clamp(total_log_prob, min=-100, max=0)  # Prevent extreme values
+        
         log_probs.append(total_log_prob)
     
     return torch.stack(log_probs)
@@ -151,15 +153,31 @@ def calculate_log_probs(model, tokenizer, prompts, responses):
 
 def reinforce_update(model, optimizer, log_probs, rewards):
     """Perform REINFORCE update using policy gradient."""
-    # Convert rewards to tensor
+    # Convert rewards to tensor and normalize them to reduce variance
     rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=log_probs.device)
     
-    # Calculate policy gradient: -log_prob * reward (negative because we want to maximize)
-    policy_loss = -(log_probs * rewards_tensor).mean()
+    # Normalize rewards to have zero mean and unit variance for stability
+    if len(rewards_tensor) > 1:
+        rewards_tensor = (rewards_tensor - rewards_tensor.mean()) / (rewards_tensor.std() + 1e-8)
     
-    # Backpropagate
+    # Clamp log probabilities to prevent extreme values
+    log_probs_clamped = torch.clamp(log_probs, min=-50, max=0)
+    
+    # Calculate policy gradient: -log_prob * reward (negative because we want to maximize)
+    policy_loss = -(log_probs_clamped * rewards_tensor).mean()
+    
+    # Check for nan/inf values
+    if not torch.isfinite(policy_loss):
+        print(f"Warning: Non-finite loss detected: {policy_loss}")
+        return 0.0
+    
+    # Backpropagate with gradient clipping
     optimizer.zero_grad()
     policy_loss.backward()
+    
+    # Clip gradients to prevent exploding gradients
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    
     optimizer.step()
     
     return policy_loss.item()
@@ -183,17 +201,17 @@ if tokenizer.pad_token is None:
 
 generator_model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    torch_dtype=torch.float16,
+    dtype=torch.float16,
     device_map="auto"
 )
 judge_model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    torch_dtype=torch.float16,
+    dtype=torch.float16,
     device_map="auto"
 )
 
-generator_optimizer = AdamW(generator_model.parameters(), lr=1e-5)
-judge_optimizer = AdamW(judge_model.parameters(), lr=1e-5)
+generator_optimizer = AdamW(generator_model.parameters(), lr=1e-6)  # Lower learning rate for stability
+judge_optimizer = AdamW(judge_model.parameters(), lr=1e-6)  # Lower learning rate for stability
 
 # Setup logging
 log_dir = f"training_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
