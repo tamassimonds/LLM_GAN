@@ -114,8 +114,59 @@ def calculate_rewards(judge_correct, generator_fooled_judge):
     return judge_rewards, generator_rewards
 
 
+def calculate_log_probs(model, tokenizer, prompts, responses):
+    """Calculate log probabilities for responses given prompts."""
+    log_probs = []
+    
+    for prompt, response in zip(prompts, responses):
+        # Tokenize prompt and full sequence
+        prompt_tokens = tokenizer(prompt, return_tensors="pt", padding=False)
+        full_text = prompt + response
+        full_tokens = tokenizer(full_text, return_tensors="pt", padding=False)
+        
+        # Move to same device as model
+        device = next(model.parameters()).device
+        prompt_tokens = {k: v.to(device) for k, v in prompt_tokens.items()}
+        full_tokens = {k: v.to(device) for k, v in full_tokens.items()}
+        
+        # Get model outputs (with gradients for training)
+        outputs = model(**full_tokens)
+        logits = outputs.logits
+        
+        # Calculate log probabilities for the response part only
+        prompt_length = prompt_tokens['input_ids'].shape[1]
+        response_tokens = full_tokens['input_ids'][0, prompt_length:]
+        response_logits = logits[0, prompt_length-1:-1]  # Shift by 1 for next token prediction
+        
+        # Calculate log probabilities
+        response_log_probs = F.log_softmax(response_logits, dim=-1)
+        selected_log_probs = response_log_probs.gather(1, response_tokens.unsqueeze(1)).squeeze(1)
+        
+        # Sum log probabilities for the response
+        total_log_prob = selected_log_probs.sum()
+        log_probs.append(total_log_prob)
+    
+    return torch.stack(log_probs)
+
+
+def reinforce_update(model, optimizer, log_probs, rewards):
+    """Perform REINFORCE update using policy gradient."""
+    # Convert rewards to tensor
+    rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=log_probs.device)
+    
+    # Calculate policy gradient: -log_prob * reward (negative because we want to maximize)
+    policy_loss = -(log_probs * rewards_tensor).mean()
+    
+    # Backpropagate
+    optimizer.zero_grad()
+    policy_loss.backward()
+    optimizer.step()
+    
+    return policy_loss.item()
+
+
 # Training parameters
-bs = 1  # Small batch for large model
+bs = 32  # Small batch for large model
 epochs = 10  # Full training
 
 def collate_fn(batch):
@@ -238,6 +289,17 @@ for epoch in range(epochs):
         
         print(f"  Results: Judge Acc: {accuracy:.4f}, Avg Gen Reward: {np.mean(generator_rewards):.4f}")
         
+        # REINFORCE training updates
+        print("  Training generator with REINFORCE...")
+        generator_log_probs = calculate_log_probs(generator_model, tokenizer, generator_prompts, generated_stories)
+        generator_loss = reinforce_update(generator_model, generator_optimizer, generator_log_probs, generator_rewards)
+        
+        print("  Training judge with REINFORCE...")
+        judge_log_probs = calculate_log_probs(judge_model, tokenizer, judge_outputs['prompts'], judge_outputs['judge_outputs'])
+        judge_loss = reinforce_update(judge_model, judge_optimizer, judge_log_probs, judge_rewards)
+        
+        print(f"  Training losses - Generator: {generator_loss:.4f}, Judge: {judge_loss:.4f}")
+        
         # Save detailed logs
         batch_log = {
             'epoch': epoch,
@@ -251,7 +313,9 @@ for epoch in range(epochs):
             'judge_data': judge_outputs,
             'judge_accuracy': accuracy,
             'generator_rewards': generator_rewards,
-            'judge_rewards': judge_rewards
+            'judge_rewards': judge_rewards,
+            'generator_loss': generator_loss,
+            'judge_loss': judge_loss
         }
         
         with open(f"{log_dir}/batch_{epoch}_{batch_idx}.json", 'w') as f:
