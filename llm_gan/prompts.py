@@ -5,7 +5,7 @@
 def llm_generator_discriminator_prompt(title, genre, story1, story2): 
     return f"""<|begin_of_text|><|start_header_id|>user<|end_header_id|>
 
-You need to determine which story was written by a human and which by AI.
+You need to determine which story is better
 
 Title: {title}
 Genre: {genre}
@@ -16,9 +16,8 @@ STORY 1:
 STORY 2:
 {story2}
 
-Think about which story feels more human-like in terms of style, creativity, and naturalness.
 
-Give your reasoning briefly, then answer with <answer>1</answer> or <answer>2</answer> to indicate which story is human-written.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+Give your reasoning briefly, then answer with <answer>1</answer> or <answer>2</answer> to indicate which story is better.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 """
 

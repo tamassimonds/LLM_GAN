@@ -13,10 +13,14 @@ from llm_gan.utils.parse import parse_tags
 from .dataset import StoryDataset
 
 
+
+
 def simple_generate(model, tokenizer, prompts, max_new_tokens=512, temperature=0.8, batch_size=32):
     """Simple batch generation with proper model state management."""
     # Ensure model is in eval mode and gradients are cleared
     model.eval()
+
+    
     
     # Check model parameters for corruption before generation
     for name, param in model.named_parameters():
@@ -72,7 +76,7 @@ def assess_judge(titles, genres, stories_human, stories_ai, judge_model, tokeniz
         model=judge_model, 
         tokenizer=tokenizer,
         prompts=prompts,
-        max_new_tokens=256,
+        max_new_tokens=MAX_AGENT_TOKENS,
         batch_size=len(prompts)  # Process all prompts at once
     )
     
@@ -110,7 +114,7 @@ def assess_judge_with_outputs(titles, genres, stories_human, stories_ai, judge_m
         model=judge_model, 
         tokenizer=tokenizer,
         prompts=prompts,
-        max_new_tokens=256,
+        max_new_tokens=MAX_JUDGE_TOKENS,
         batch_size=len(prompts)  # Process all prompts at once
     )
     
@@ -188,7 +192,7 @@ def calculate_log_probs(model, tokenizer, prompts, responses):
         selected_log_probs = response_log_probs.gather(1, response_tokens.unsqueeze(1)).squeeze(1)
         
         # Sum log probabilities for the response with clamping for stability
-        total_log_prob = selected_log_probs.sum()
+        total_log_prob = selected_log_probs.mean()
         # total_log_prob = torch.clamp(total_log_prob, min=-100, max=0)  # Prevent extreme values
         
         log_probs.append(total_log_prob)
@@ -233,7 +237,11 @@ def reinforce_update(model, optimizer, log_probs, rewards):
 
 # Training parameters
 bs = 32  # Small batch for large model
-epochs = 10  # Full training
+epochs = 100  # Full training
+
+MAX_AGENT_TOKENS = 512
+MAX_JUDGE_TOKENS = 512
+
 
 def collate_fn(batch):
     return batch
@@ -249,20 +257,21 @@ if tokenizer.pad_token is None:
 
 generator_model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    dtype=torch.float16,
+    dtype=torch.bfloat16,
     device_map="auto"
 )
 judge_model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    dtype=torch.float16,
+    dtype=torch.bfloat16,
     device_map="auto"
 )
+torch.backends.cuda.matmul.allow_tf32 = True
 
-generator_optimizer = AdamW(generator_model.parameters(), lr=1e-6)  # Lower learning rate for stability
-judge_optimizer = AdamW(judge_model.parameters(), lr=1e-6)  # Lower learning rate for stability
+generator_optimizer = AdamW(generator_model.parameters(), lr=1e-5)  # Lower learning rate for stability
+judge_optimizer = AdamW(judge_model.parameters(), lr=1e-5)  # Lower learning rate for stability
 
 # Setup logging
-log_dir = f"training_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+log_dir = f"logs/training_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 os.makedirs(log_dir, exist_ok=True)
 
 print(f"Starting training with {len(dataset)} samples, {len(dataloader)} batches...")
