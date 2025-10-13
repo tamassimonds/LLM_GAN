@@ -23,7 +23,7 @@ def assess_judge(titles, genres, stories_human, stories_ai, judge_model, tokeniz
         prompts, 
         model=judge_model, 
         tokenizer=tokenizer,
-        max_new_tokens=50  # Reduced for speed
+        max_new_tokens=2048
     )
     
     parsed_outputs = []
@@ -47,8 +47,8 @@ def calculate_rewards(judge_correct, generator_fooled_judge):
 
 
 # Training parameters
-bs = 2  # Even smaller for testing
-epochs = 1  # Just 1 epoch for testing
+bs = 1  # Small batch for large model
+epochs = 10  # Full training
 
 def collate_fn(batch):
     return batch
@@ -56,14 +56,22 @@ def collate_fn(batch):
 dataset = StoryDataset("data/combined_eval_stories.csv")
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=bs, shuffle=True, collate_fn=collate_fn)
 
-model_name = "gpt2"
+model_name = "meta-llama/Llama-3.2-1B-Instruct"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.padding_side = 'left'  # Fix the padding warning
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-generator_model = AutoModelForCausalLM.from_pretrained(model_name)
-judge_model = AutoModelForCausalLM.from_pretrained(model_name)
+generator_model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    torch_dtype=torch.float16,
+    device_map="auto"
+)
+judge_model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    torch_dtype=torch.float16,
+    device_map="auto"
+)
 
 generator_optimizer = AdamW(generator_model.parameters(), lr=1e-5)
 judge_optimizer = AdamW(judge_model.parameters(), lr=1e-5)
@@ -88,7 +96,7 @@ for epoch in range(epochs):
             generator_prompts,
             model=generator_model,
             tokenizer=tokenizer,
-            max_new_tokens=100,  # Reduced for speed
+            max_new_tokens=2048
             temperature=0.8
         )
         
@@ -96,7 +104,7 @@ for epoch in range(epochs):
         for story_text in generated_stories_raw:
             story = parse_tags(story_text, "story")
             if story is None:
-                story = story_text.split("ASSISTANT>")[-1].strip()[:200]  # Shorter stories
+                story = story_text.split("ASSISTANT>")[-1].strip()[:2048]  # Full length stories
             generated_stories.append(story)
         
         print("  Judging stories...")
@@ -116,11 +124,9 @@ for epoch in range(epochs):
         
         print(f"  Results: Judge Acc: {accuracy:.4f}, Avg Gen Reward: {np.mean(generator_rewards):.4f}")
         
-        # Break after a few batches for testing
-        if batch_idx >= 2:
-            break
+        # Run full training (removed break)
     
-    print(f"Epoch {epoch} Summary - Judge Accuracy: {epoch_judge_accuracy/(batch_idx+1):.4f}, Generator Reward: {epoch_generator_reward/(batch_idx+1):.4f}")
+    print(f"Epoch {epoch} Summary - Judge Accuracy: {epoch_judge_accuracy/len(dataloader):.4f}, Generator Reward: {epoch_generator_reward/len(dataloader):.4f}")
     
     torch.save(generator_model.state_dict(), f"working_generator_epoch_{epoch}.pt")
     torch.save(judge_model.state_dict(), f"working_judge_epoch_{epoch}.pt")
