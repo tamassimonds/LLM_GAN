@@ -3,6 +3,9 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from torch.optim import AdamW
 import random
 import numpy as np
+import json
+import os
+from datetime import datetime
 
 from llm_gan.prompts import llm_generator_prompt, llm_generator_discriminator_prompt
 from llm_gan.utils import batch_local_inference
@@ -38,6 +41,41 @@ def assess_judge(titles, genres, stories_human, stories_ai, judge_model, tokeniz
     
     correct = [parsed == target for parsed, target in zip(parsed_outputs, targets)]
     return correct
+
+def assess_judge_with_outputs(titles, genres, stories_human, stories_ai, judge_model, tokenizer):
+    targets = [random.randint(0,1) for _ in range(len(titles))]
+    
+    prompts = []
+    for title, genre, human_story, ai_story, target in zip(titles, genres, stories_human, stories_ai, targets):
+        story_order = (human_story, ai_story) if target == 0 else (ai_story, human_story)
+        prompt = llm_generator_discriminator_prompt(title, genre, *story_order)
+        prompts.append(prompt)
+    
+    judge_outputs = batch_local_inference(
+        prompts, 
+        model=judge_model, 
+        tokenizer=tokenizer,
+        max_new_tokens=2048
+    )
+    
+    parsed_outputs = []
+    for output in judge_outputs:
+        answer = parse_tags(output, "answer")
+        if answer == "1":
+            parsed_outputs.append(0)
+        elif answer == "2":
+            parsed_outputs.append(1)
+        else:
+            parsed_outputs.append(-1)
+    
+    correct = [parsed == target for parsed, target in zip(parsed_outputs, targets)]
+    return correct, {
+        'targets': targets,
+        'prompts': prompts,
+        'judge_outputs': judge_outputs,
+        'parsed_outputs': parsed_outputs,
+        'correct': correct
+    }
 
 
 def calculate_rewards(judge_correct, generator_fooled_judge):
@@ -76,7 +114,12 @@ judge_model = AutoModelForCausalLM.from_pretrained(
 generator_optimizer = AdamW(generator_model.parameters(), lr=1e-5)
 judge_optimizer = AdamW(judge_model.parameters(), lr=1e-5)
 
+# Setup logging
+log_dir = f"training_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+os.makedirs(log_dir, exist_ok=True)
+
 print(f"Starting training with {len(dataset)} samples, {len(dataloader)} batches...")
+print(f"Logging to: {log_dir}")
 for epoch in range(epochs):
     epoch_judge_accuracy = 0
     epoch_generator_reward = 0
@@ -108,8 +151,8 @@ for epoch in range(epochs):
             generated_stories.append(story)
         
         print("  Judging stories...")
-        # Judge the stories
-        judge_correct = assess_judge(
+        # Judge the stories (modified to return judge outputs too)
+        judge_correct, judge_outputs = assess_judge_with_outputs(
             titles, genres, human_stories, generated_stories, judge_model, tokenizer
         )
         
@@ -124,9 +167,39 @@ for epoch in range(epochs):
         
         print(f"  Results: Judge Acc: {accuracy:.4f}, Avg Gen Reward: {np.mean(generator_rewards):.4f}")
         
+        # Save detailed logs
+        batch_log = {
+            'epoch': epoch,
+            'batch_idx': batch_idx,
+            'titles': titles,
+            'genres': genres,
+            'human_stories': human_stories,
+            'generator_prompts': generator_prompts,
+            'generated_stories_raw': generated_stories_raw,
+            'generated_stories': generated_stories,
+            'judge_data': judge_outputs,
+            'judge_accuracy': accuracy,
+            'generator_rewards': generator_rewards,
+            'judge_rewards': judge_rewards
+        }
+        
+        with open(f"{log_dir}/batch_{epoch}_{batch_idx}.json", 'w') as f:
+            json.dump(batch_log, f, indent=2)
+        
         # Run full training (removed break)
     
-    print(f"Epoch {epoch} Summary - Judge Accuracy: {epoch_judge_accuracy/len(dataloader):.4f}, Generator Reward: {epoch_generator_reward/len(dataloader):.4f}")
+    epoch_summary = {
+        'epoch': epoch,
+        'judge_accuracy': epoch_judge_accuracy/len(dataloader),
+        'generator_reward': epoch_generator_reward/len(dataloader),
+        'total_batches': len(dataloader)
+    }
+    
+    print(f"Epoch {epoch} Summary - Judge Accuracy: {epoch_summary['judge_accuracy']:.4f}, Generator Reward: {epoch_summary['generator_reward']:.4f}")
+    
+    # Save epoch summary
+    with open(f"{log_dir}/epoch_{epoch}_summary.json", 'w') as f:
+        json.dump(epoch_summary, f, indent=2)
     
     torch.save(generator_model.state_dict(), f"working_generator_epoch_{epoch}.pt")
     torch.save(judge_model.state_dict(), f"working_judge_epoch_{epoch}.pt")
