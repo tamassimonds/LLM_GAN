@@ -9,9 +9,54 @@ import os
 from datetime import datetime
 
 from llm_gan.prompts import llm_generator_prompt, llm_generator_discriminator_prompt
-from llm_gan.utils import batch_local_inference
 from llm_gan.utils.parse import parse_tags
 from .dataset import StoryDataset
+
+
+def simple_generate(model, tokenizer, prompts, max_new_tokens=512, temperature=0.8, batch_size=32):
+    """Simple batch generation with proper model state management."""
+    # Ensure model is in eval mode and gradients are cleared
+    model.eval()
+    
+    # Check model parameters for corruption before generation
+    for name, param in model.named_parameters():
+        if not torch.isfinite(param).all():
+            print(f"ERROR: Model parameter {name} contains inf/nan values!")
+            raise RuntimeError(f"Model corrupted: {name} has non-finite values")
+    
+    responses = []
+    
+    # Process in batches
+    for i in range(0, len(prompts), batch_size):
+        batch_prompts = prompts[i:i + batch_size]
+        
+        with torch.no_grad():
+            # Tokenize batch
+            encoded = tokenizer(
+                batch_prompts, 
+                return_tensors="pt", 
+                padding=True, 
+                truncation=True
+            )
+            
+            # Move to model device
+            device = next(model.parameters()).device
+            encoded = {k: v.to(device) for k, v in encoded.items()}
+            
+            # Generate
+            outputs = model.generate(
+                **encoded,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                do_sample=True,
+                pad_token_id=tokenizer.eos_token_id
+            )
+            
+            # Decode
+            batch_responses = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            responses.extend(batch_responses)
+    
+    return responses
 
 
 def assess_judge(titles, genres, stories_human, stories_ai, judge_model, tokenizer):
@@ -23,10 +68,10 @@ def assess_judge(titles, genres, stories_human, stories_ai, judge_model, tokeniz
         prompt = llm_generator_discriminator_prompt(title, genre, *story_order)
         prompts.append(prompt)
     
-    judge_outputs = batch_local_inference(
-        prompts, 
+    judge_outputs = simple_generate(
         model=judge_model, 
         tokenizer=tokenizer,
+        prompts=prompts,
         max_new_tokens=256,
         batch_size=len(prompts)  # Process all prompts at once
     )
@@ -61,10 +106,10 @@ def assess_judge_with_outputs(titles, genres, stories_human, stories_ai, judge_m
         prompt = llm_generator_discriminator_prompt(title, genre, *story_order)
         prompts.append(prompt)
     
-    judge_outputs = batch_local_inference(
-        prompts, 
+    judge_outputs = simple_generate(
         model=judge_model, 
         tokenizer=tokenizer,
+        prompts=prompts,
         max_new_tokens=256,
         batch_size=len(prompts)  # Process all prompts at once
     )
@@ -144,9 +189,10 @@ def calculate_log_probs(model, tokenizer, prompts, responses):
         
         # Sum log probabilities for the response with clamping for stability
         total_log_prob = selected_log_probs.sum()
-        total_log_prob = torch.clamp(total_log_prob, min=-100, max=0)  # Prevent extreme values
+        # total_log_prob = torch.clamp(total_log_prob, min=-100, max=0)  # Prevent extreme values
         
         log_probs.append(total_log_prob)
+        # breakpoint()
     
     return torch.stack(log_probs)
 
@@ -161,10 +207,12 @@ def reinforce_update(model, optimizer, log_probs, rewards):
         rewards_tensor = (rewards_tensor - rewards_tensor.mean()) / (rewards_tensor.std() + 1e-8)
     
     # Clamp log probabilities to prevent extreme values
-    log_probs_clamped = torch.clamp(log_probs, min=-50, max=0)
+    log_probs_clamped = torch.clamp(log_probs, min=-500, max=0)
     
     # Calculate policy gradient: -log_prob * reward (negative because we want to maximize)
     policy_loss = -(log_probs_clamped * rewards_tensor).mean()
+
+    # breakpoint()
     
     # Check for nan/inf values
     if not torch.isfinite(policy_loss):
@@ -234,10 +282,10 @@ for epoch in range(epochs):
         generator_prompts = [llm_generator_prompt(title, genre) for title, genre in zip(titles, genres)]
         
         print("  Generating stories...")
-        generated_stories_raw = batch_local_inference(
-            generator_prompts,
+        generated_stories_raw = simple_generate(
             model=generator_model,
             tokenizer=tokenizer,
+            prompts=generator_prompts,
             max_new_tokens=512,
             temperature=0.8,
             batch_size=32  # Process all 32 at once
@@ -309,14 +357,20 @@ for epoch in range(epochs):
         
         # REINFORCE training updates
         print("  Training generator with REINFORCE...")
+        generator_model.train()  # Set to training mode
         generator_log_probs = calculate_log_probs(generator_model, tokenizer, generator_prompts, generated_stories)
         generator_loss = reinforce_update(generator_model, generator_optimizer, generator_log_probs, generator_rewards)
         
         print("  Training judge with REINFORCE...")
+        judge_model.train()  # Set to training mode
         judge_log_probs = calculate_log_probs(judge_model, tokenizer, judge_outputs['prompts'], judge_outputs['judge_outputs'])
         judge_loss = reinforce_update(judge_model, judge_optimizer, judge_log_probs, judge_rewards)
         
         print(f"  Training losses - Generator: {generator_loss:.4f}, Judge: {judge_loss:.4f}")
+        
+        # Clear gradients after training
+        generator_optimizer.zero_grad()
+        judge_optimizer.zero_grad()
         
         # Save detailed logs
         batch_log = {
