@@ -160,35 +160,49 @@ for epoch in range(epochs):
         )
         
         generated_stories = []
-        for story_text in generated_stories_raw:
-            # First try to get story from <story> tags
-            story = parse_tags(story_text, "story")
+        for i, story_text in enumerate(generated_stories_raw):
+            # First try to get story from <story> tags, but exclude the example
+            all_stories = parse_tags(story_text, "story")
+            story = None
+            
+            if isinstance(all_stories, list):
+                # Multiple story tags found - filter out the example
+                for s in all_stories:
+                    if s and "Your story here" not in s and len(s) > 50:
+                        story = s
+                        break
+            elif all_stories and "Your story here" not in all_stories:
+                story = all_stories
             
             if story is None:
                 # Try to get content from <STORY> tags (uppercase)
                 story = parse_tags(story_text, "STORY")
             
             if story is None:
-                # Look for content after assistant header
-                if "<|start_header_id|>assistant<|end_header_id|>" in story_text:
-                    content = story_text.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
-                elif "assistant<|end_header_id|>" in story_text:
-                    content = story_text.split("assistant<|end_header_id|>")[-1].strip()
-                else:
-                    content = story_text.strip()
+                # Look for content after assistant header - this is where the actual story is
+                if "assistant" in story_text:
+                    # Split on assistant and get the last part
+                    parts = story_text.split("assistant")
+                    if len(parts) > 1:
+                        content = parts[-1].strip()
+                        # Take the first substantial paragraph
+                        lines = content.split('\n')
+                        story_lines = []
+                        for line in lines:
+                            line = line.strip()
+                            if line and not line.startswith('<') and len(line) > 10:
+                                story_lines.append(line)
+                        if story_lines:
+                            story = ' '.join(story_lines)
                 
-                # Skip if it's clearly UI elements or too short
-                if content and "BUTTON" not in content and "OUTPUT" not in content and len(content) > 20:
-                    story = content
-                else:
-                    story = f"A {genres[0].lower()} story about {titles[0]}."  # Fallback
+                if not story:
+                    story = f"A {genres[i].lower()} story about {titles[i]}."  # Fallback
                 
-                # Clean up but preserve readability
+                # Clean up and limit length
                 if story and len(story) > 10:
-                    # Remove excessive whitespace but keep structure
                     story = ' '.join(story.split())[:512]
                 else:
-                    story = f"A {genres[0].lower()} story titled '{titles[0]}'."  # Safe fallback
+                    story = f"A {genres[i].lower()} story titled '{titles[i]}'."
                     
             generated_stories.append(story)
         
