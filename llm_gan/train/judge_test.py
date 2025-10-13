@@ -1,5 +1,4 @@
 import torch
-import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from torch.optim import AdamW
 import random
