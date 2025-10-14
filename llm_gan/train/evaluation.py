@@ -44,9 +44,6 @@ def assess_judge(titles: List[str], genres: List[str], stories_human: List[str],
             parsed_outputs.append(1)
         else:
             parsed_outputs.append(-1)
-            print(f"JUDGE PARSE FAILED: No valid \\boxed{{1}} or \\boxed{{2}} found in response: '{response[:100]}...'")
-            if answer is not None:
-                print(f"  Found boxed content but invalid: '{answer}'")
     
     correct = [parsed == target for parsed, target in zip(parsed_outputs, targets)]
     return correct
@@ -94,9 +91,6 @@ def assess_judge_with_outputs(titles: List[str], genres: List[str], stories_huma
             parsed_outputs.append(1)
         else:
             parsed_outputs.append(-1)
-            print(f"JUDGE PARSE FAILED: No valid \\boxed{{1}} or \\boxed{{2}} found in response: '{response[:100]}...'")
-            if answer is not None:
-                print(f"  Found boxed content but invalid: '{answer}'")
     
     correct = [parsed == target for parsed, target in zip(parsed_outputs, targets)]
     return correct, {

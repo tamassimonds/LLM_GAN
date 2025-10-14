@@ -47,14 +47,12 @@ def extract_story_from_generation(story_text: str, title: str, genre: str) -> st
         # Check if text IS a placeholder pattern (not just contains it)
         for pattern in exact_placeholder_patterns:
             if text_lower == pattern or text_lower == pattern.strip('*'):
-                print(f"PLACEHOLDER DETECTED: Exact match '{text}' for pattern '{pattern}'")
                 return True
         
         # Check for standalone placeholder phrases (surrounded by whitespace/punctuation)
         import re
         for pattern in ["your story here", "story here"]:
             if re.search(r'\b' + re.escape(pattern) + r'\b', text_lower) and len(text.strip()) < 50:
-                print(f"PLACEHOLDER DETECTED: Standalone phrase '{text}' matches '{pattern}'")
                 return True
             
         return False
@@ -100,7 +98,6 @@ def extract_story_from_generation(story_text: str, title: str, genre: str) -> st
     # Final fallback - but still check for placeholders
     if not story or is_placeholder_text(story):
         fallback_story = f"A {genre.lower()} story about {title}."
-        print(f"FALLBACK USED: Generated placeholder content, using fallback: '{fallback_story}'")
         story = fallback_story
     
     # Clean up and limit length
@@ -123,7 +120,8 @@ def train_llm_gan(
     max_agent_tokens: int = 512,
     max_judge_tokens: int = 1024,
     project_name: str = "llm-gan",
-    run_name: str = None
+    run_name: str = None,
+    save_checkpoints: bool = False
 ):
     """Main training function for LLM GAN."""
     
@@ -131,21 +129,21 @@ def train_llm_gan(
     if run_name is None:
         run_name = f"llm_gan_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
-    # Disable wandb for testing
-    # wandb.init(
-    #     project=project_name,
-    #     name=run_name,
-    #     config={
-    #         "model_name": model_name,
-    #         "batch_size": batch_size,
-    #         "epochs": epochs,
-    #         "learning_rate": learning_rate,
-    #         "max_story_length": max_story_length,
-    #         "min_story_length": min_story_length,
-    #         "max_agent_tokens": max_agent_tokens,
-    #         "max_judge_tokens": max_judge_tokens
-    #     }
-    # )
+    wandb.init(
+        project=project_name,
+        name=run_name,
+        config={
+            "model_name": model_name,
+            "batch_size": batch_size,
+            "epochs": epochs,
+            "learning_rate": learning_rate,
+            "max_story_length": max_story_length,
+            "min_story_length": min_story_length,
+            "max_agent_tokens": max_agent_tokens,
+            "max_judge_tokens": max_judge_tokens,
+            "save_checkpoints": save_checkpoints
+        }
+    )
     
     # Setup logging
     log_dir = f"logs/training_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -266,17 +264,17 @@ def train_llm_gan(
             generator_optimizer.zero_grad()
             judge_optimizer.zero_grad()
             
-            # Log to wandb (disabled for testing)
-            # wandb.log({
-            #     "epoch": epoch,
-            #     "batch": batch_idx,
-            #     "step": step,
-            #     "judge_accuracy": accuracy,
-            #     "generator_reward_mean": np.mean(generator_rewards),
-            #     "generator_loss": generator_loss,
-            #     "judge_loss": judge_loss,
-            #     "judge_reward_mean": np.mean(judge_rewards)
-            # })
+            # Log to wandb
+            wandb.log({
+                "epoch": epoch,
+                "batch": batch_idx,
+                "step": step,
+                "judge_accuracy": accuracy,
+                "generator_reward_mean": np.mean(generator_rewards),
+                "generator_loss": generator_loss,
+                "judge_loss": judge_loss,
+                "judge_reward_mean": np.mean(judge_rewards)
+            })
             
             # Save detailed logs
             batch_log = {
@@ -335,24 +333,28 @@ def train_llm_gan(
         epoch_summary['benchmark_accuracy'] = benchmark_results['overall_accuracy']
         epoch_summary['benchmark_failed_rate'] = benchmark_results['failed_rate']
         
-        # Log epoch summary to wandb (disabled for testing)
-        # wandb.log({
-        #     "epoch_judge_accuracy": epoch_summary['judge_accuracy'],
-        #     "epoch_generator_reward": epoch_summary['generator_reward'],
-        #     "benchmark_accuracy": benchmark_results['overall_accuracy'],
-        #     "benchmark_failed_rate": benchmark_results['failed_rate']
-        # })
+        # Log epoch summary to wandb
+        wandb.log({
+            "epoch_judge_accuracy": epoch_summary['judge_accuracy'],
+            "epoch_generator_reward": epoch_summary['generator_reward'],
+            "benchmark_accuracy": benchmark_results['overall_accuracy'],
+            "benchmark_failed_rate": benchmark_results['failed_rate']
+        })
         
         # Save epoch summary
         with open(f"{log_dir}/epoch_{epoch}_summary.json", 'w') as f:
             json.dump(epoch_summary, f, indent=2)
         
-        # Save model checkpoints
-        torch.save(generator_model.state_dict(), f"generator_epoch_{epoch}.pt")
-        torch.save(judge_model.state_dict(), f"judge_epoch_{epoch}.pt")
+        # Save model checkpoints (if enabled)
+        if save_checkpoints:
+            torch.save(generator_model.state_dict(), f"generator_epoch_{epoch}.pt")
+            torch.save(judge_model.state_dict(), f"judge_epoch_{epoch}.pt")
+            print(f"Saved model checkpoints for epoch {epoch}")
+        else:
+            print(f"Skipping checkpoint save for epoch {epoch} (save_checkpoints=False)")
 
     print("Training completed successfully!")
-    # wandb.finish()
+    wandb.finish()
 
 
 if __name__ == "__main__":
