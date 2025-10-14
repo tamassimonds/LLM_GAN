@@ -28,10 +28,10 @@ run_training() {
     
     echo ""
     echo "Starting training with $ngpus GPUs, batch_size=$batch_size, epochs=$epochs"
-    echo "Command: torchrun --nproc_per_node=$ngpus scripts/train_ddp.py --batch_size $batch_size --epochs $epochs $extra_args"
+    echo "Command: torchrun --nproc_per_node=$ngpus train_ddp.py --batch_size $batch_size --epochs $epochs $extra_args"
     echo ""
     
-    torchrun --nproc_per_node=$ngpus scripts/train_ddp.py \
+    torchrun --nproc_per_node=$ngpus train_ddp.py \
         --batch_size $batch_size \
         --epochs $epochs \
         $extra_args
@@ -59,7 +59,7 @@ case "$1" in
         echo "  full  - Full training with all GPUs, 100 epochs, save checkpoints"
         echo ""
         echo "Custom usage:"
-        echo "  torchrun --nproc_per_node=N scripts/train_ddp.py [options]"
+        echo "  torchrun --nproc_per_node=N train_ddp.py [options]"
         exit 1
         ;;
 esac
