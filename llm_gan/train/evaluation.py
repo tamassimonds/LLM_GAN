@@ -29,11 +29,9 @@ def assess_judge(titles: List[str], genres: List[str], stories_human: List[str],
     
     parsed_outputs = []
     for output in judge_outputs:
-        # Extract content after assistant header to get just the response
-        if "assistant<|end_header_id|>" in output:
-            response = output.split("assistant<|end_header_id|>")[-1].strip()
-        elif "<|start_header_id|>assistant<|end_header_id|>" in output:
-            response = output.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
+        # Extract content after the last occurrence of "assistant"
+        if "assistant" in output:
+            response = output.rsplit("assistant", 1)[-1].strip()
         else:
             response = output.strip()
         
@@ -46,6 +44,9 @@ def assess_judge(titles: List[str], genres: List[str], stories_human: List[str],
             parsed_outputs.append(1)
         else:
             parsed_outputs.append(-1)
+            print(f"JUDGE PARSE FAILED: No valid \\boxed{{1}} or \\boxed{{2}} found in response: '{response[:100]}...'")
+            if answer is not None:
+                print(f"  Found boxed content but invalid: '{answer}'")
     
     correct = [parsed == target for parsed, target in zip(parsed_outputs, targets)]
     return correct
@@ -76,11 +77,9 @@ def assess_judge_with_outputs(titles: List[str], genres: List[str], stories_huma
     parsed_outputs = []
     
     for output in judge_outputs:
-        # Extract content after assistant header to get just the response
-        if "assistant<|end_header_id|>" in output:
-            response = output.split("assistant<|end_header_id|>")[-1].strip()
-        elif "<|start_header_id|>assistant<|end_header_id|>" in output:
-            response = output.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
+        # Extract content after the last occurrence of "assistant"
+        if "assistant" in output:
+            response = output.rsplit("assistant", 1)[-1].strip()
         else:
             response = output.strip()
         
@@ -95,6 +94,9 @@ def assess_judge_with_outputs(titles: List[str], genres: List[str], stories_huma
             parsed_outputs.append(1)
         else:
             parsed_outputs.append(-1)
+            print(f"JUDGE PARSE FAILED: No valid \\boxed{{1}} or \\boxed{{2}} found in response: '{response[:100]}...'")
+            if answer is not None:
+                print(f"  Found boxed content but invalid: '{answer}'")
     
     correct = [parsed == target for parsed, target in zip(parsed_outputs, targets)]
     return correct, {
@@ -106,8 +108,17 @@ def assess_judge_with_outputs(titles: List[str], genres: List[str], stories_huma
     }
 
 
-def calculate_rewards(judge_correct: List[bool], generator_fooled_judge: List[bool]) -> Tuple[List[float], List[float]]:
+def calculate_rewards(judge_correct: List[bool], generator_fooled_judge: List[bool], 
+                     parsed_outputs: List[int]) -> Tuple[List[float], List[float]]:
     """Calculate rewards for judge and generator based on performance."""
-    judge_rewards = [1.0 if correct else -0.5 for correct in judge_correct]
+    judge_rewards = []
+    for i, correct in enumerate(judge_correct):
+        if parsed_outputs[i] == -1:  # Failed to parse (no boxed output)
+            judge_rewards.append(-1.0)  # Severe penalty for not following format
+        elif correct:
+            judge_rewards.append(1.0)   # Correct judgment
+        else:
+            judge_rewards.append(-1.0)  # Incorrect judgment
+    
     generator_rewards = [1.0 if fooled else -1.0 for fooled in generator_fooled_judge]
     return judge_rewards, generator_rewards

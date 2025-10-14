@@ -14,6 +14,7 @@ from .dataset import StoryDataset
 from .inference import simple_generate
 from .evaluation import assess_judge_with_outputs, calculate_rewards
 from .training import calculate_log_probs, reinforce_update
+from .benchmark import run_benchmark_evaluation, save_benchmark_results, compare_benchmark_results
 
 
 def extract_story_from_generation(story_text: str, title: str, genre: str) -> str:
@@ -234,7 +235,7 @@ def train_llm_gan(
             
             generator_fooled_judge = [not correct for correct in judge_correct]
             judge_rewards, generator_rewards = calculate_rewards(
-                judge_correct, generator_fooled_judge
+                judge_correct, generator_fooled_judge, judge_outputs['parsed_outputs']
             )
             
             accuracy = sum(judge_correct) / len(judge_correct) if judge_correct else 0
@@ -306,10 +307,35 @@ def train_llm_gan(
         
         print(f"Epoch {epoch} Summary - Judge Accuracy: {epoch_summary['judge_accuracy']:.4f}, Generator Reward: {epoch_summary['generator_reward']:.4f}")
         
+        # Run benchmark evaluation
+        print(f"\nRunning benchmark evaluation for epoch {epoch}...")
+        benchmark_results = run_benchmark_evaluation(
+            judge_model, tokenizer, 
+            max_judge_tokens=max_judge_tokens,
+            max_story_length=max_story_length
+        )
+        
+        # Save benchmark results
+        benchmark_path = f"{log_dir}/benchmark_epoch_{epoch}.json"
+        save_benchmark_results(benchmark_results, benchmark_path)
+        
+        # Compare with previous epoch if available
+        if epoch > 0:
+            previous_benchmark_path = f"{log_dir}/benchmark_epoch_{epoch-1}.json"
+            comparison = compare_benchmark_results(benchmark_results, previous_benchmark_path)
+            print(f"Benchmark Comparison: {comparison['message']}")
+            epoch_summary['benchmark_comparison'] = comparison
+        
+        # Add benchmark results to epoch summary
+        epoch_summary['benchmark_accuracy'] = benchmark_results['overall_accuracy']
+        epoch_summary['benchmark_failed_rate'] = benchmark_results['failed_rate']
+        
         # Log epoch summary to wandb (disabled for testing)
         # wandb.log({
         #     "epoch_judge_accuracy": epoch_summary['judge_accuracy'],
-        #     "epoch_generator_reward": epoch_summary['generator_reward']
+        #     "epoch_generator_reward": epoch_summary['generator_reward'],
+        #     "benchmark_accuracy": benchmark_results['overall_accuracy'],
+        #     "benchmark_failed_rate": benchmark_results['failed_rate']
         # })
         
         # Save epoch summary

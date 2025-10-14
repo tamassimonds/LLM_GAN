@@ -83,10 +83,9 @@ def assess_judge(titles, genres, stories_human, stories_ai, judge_model, tokeniz
     parsed_outputs = []
     for output in judge_outputs:
         # Extract content after assistant header to get just the response
-        if "assistant<|end_header_id|>" in output:
-            response = output.split("assistant<|end_header_id|>")[-1].strip()
-        elif "<|start_header_id|>assistant<|end_header_id|>" in output:
-            response = output.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
+        # Extract content after the last occurrence of "assistant"
+        if "assistant" in output:
+            response = output.rsplit("assistant", 1)[-1].strip()
         else:
             response = output.strip()
         
@@ -123,10 +122,9 @@ def assess_judge_with_outputs(titles, genres, stories_human, stories_ai, judge_m
     parsed_outputs = []
     for output in judge_outputs:
         # Extract content after assistant header to get just the response
-        if "assistant<|end_header_id|>" in output:
-            response = output.split("assistant<|end_header_id|>")[-1].strip()
-        elif "<|start_header_id|>assistant<|end_header_id|>" in output:
-            response = output.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
+        # Extract content after the last occurrence of "assistant"
+        if "assistant" in output:
+            response = output.rsplit("assistant", 1)[-1].strip()
         else:
             response = output.strip()
         
@@ -143,10 +141,9 @@ def assess_judge_with_outputs(titles, genres, stories_human, stories_ai, judge_m
     # Extract just the judge responses (not the full prompt+response)
     judge_responses = []
     for output in judge_outputs:
-        if "assistant<|end_header_id|>" in output:
-            response = output.split("assistant<|end_header_id|>")[-1].strip()
-        elif "<|start_header_id|>assistant<|end_header_id|>" in output:
-            response = output.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
+        # Extract content after the last occurrence of "assistant"
+        if "assistant" in output:
+            response = output.rsplit("assistant", 1)[-1].strip()
         else:
             response = output.strip()
         judge_responses.append(response)
