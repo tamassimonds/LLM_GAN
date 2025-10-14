@@ -5,9 +5,14 @@ from torch.utils.data import Dataset as TorchDataset
 
 
 class StoryDataset(TorchDataset):
-    def __init__(self, csv_path: str):
+    def __init__(self, csv_path: str, min_story_length: int = 100):
         self.data = pd.read_csv(csv_path)
         self.data = self.data.dropna(subset=['title', 'genre', 'human_story'])
+        
+        # Filter out human stories that are too short
+        self.data = self.data[self.data['human_story'].str.len() >= min_story_length]
+        
+        print(f"Loaded {len(self.data)} stories (filtered to have human stories >= {min_story_length} characters)")
         
     def __len__(self):
         return len(self.data)

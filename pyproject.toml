@@ -13,4 +13,5 @@ dependencies = [
     "pandas>=2.0.0",
     "accelerate>=0.20.0",
     "peft>=0.8.0",
+    "wandb>=0.15.0",
 ]
