@@ -41,20 +41,24 @@ def calculate_log_probs(model, tokenizer, prompts: List[str], responses: List[st
     return torch.stack(log_probs)
 
 
-def reinforce_update(model, optimizer, log_probs: torch.Tensor, rewards: List[float]) -> float:
+def reinforce_update(model, optimizer, log_probs: torch.Tensor, rewards: List[float], max_len: int= None) -> float:
     """Perform REINFORCE update using policy gradient."""
     # Convert rewards to tensor and normalize them to reduce variance
     rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=log_probs.device)
     
     # Normalize rewards to have zero mean and unit variance for stability
     if len(rewards_tensor) > 1:
-        rewards_tensor = (rewards_tensor - rewards_tensor.mean()) / (rewards_tensor.std() + 1e-8)
+        #skeptical of this cause it cooks the gradient when we get low accuracy? Idk guess if we are having 0 fooling it's ok
+        rewards_tensor = (rewards_tensor - rewards_tensor.mean()) / (rewards_tensor.std() + 1e-8) 
     
     # Clamp log probabilities to prevent extreme values
     log_probs_clamped = torch.clamp(log_probs, min=-500, max=0)
     
     # Calculate policy gradient: -log_prob * reward (negative because we want to maximize)
-    policy_loss = -(log_probs_clamped * rewards_tensor).mean()
+    if not max_len:
+        policy_loss = -(log_probs_clamped * rewards_tensor).mean() #This is the part I'm skeptical of
+    else:
+        policy_loss = -(log_probs_clamped * rewards_tensor).sum() / max_len
     
     # Check for nan/inf values
     if not torch.isfinite(policy_loss):

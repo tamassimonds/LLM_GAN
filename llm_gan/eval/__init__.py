@@ -1,0 +1,1 @@
+"""Offline evaluation system for comparing LLM GAN generated stories."""
