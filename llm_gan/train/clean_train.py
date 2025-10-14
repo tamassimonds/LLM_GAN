@@ -226,9 +226,31 @@ def train_llm_gan(
             ]
             
             print("  Judging stories...")
-            # Clip stories to equal length for fair comparison
-            clipped_human_stories = [story[:max_story_length] for story in human_stories]
-            clipped_generated_stories = [story[:max_story_length] for story in generated_stories]
+            # Clip stories to equal length for fair comparison, but enforce minimum length
+            min_words = 128  # Minimum word count to prevent gaming
+            
+            clipped_human_stories = []
+            clipped_generated_stories = []
+            
+            for human_story, generated_story in zip(human_stories, generated_stories):
+                # Clip to max length first
+                human_clipped = human_story[:max_story_length]
+                generated_clipped = generated_story[:max_story_length]
+                
+                # Count words (rough approximation: chars/5)
+                human_word_count = len(human_clipped.split())
+                generated_word_count = len(generated_clipped.split())
+                
+                # If either story is too short, penalize by padding or truncating to min viable comparison
+                if human_word_count < min_words or generated_word_count < min_words:
+                    # Use max_story_length for both to ensure fair comparison of longer content
+                    clipped_human_stories.append(human_clipped)
+                    clipped_generated_stories.append(generated_clipped)
+                else:
+                    # Both stories meet minimum length, clip to same actual length
+                    min_length = min(len(human_clipped), len(generated_clipped))
+                    clipped_human_stories.append(human_clipped[:min_length])
+                    clipped_generated_stories.append(generated_clipped[:min_length])
             
             # Judge the stories
             judge_correct, judge_outputs = assess_judge_with_outputs(
