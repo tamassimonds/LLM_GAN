@@ -125,20 +125,21 @@ def train_llm_gan(
     if run_name is None:
         run_name = f"llm_gan_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
-    wandb.init(
-        project=project_name,
-        name=run_name,
-        config={
-            "model_name": model_name,
-            "batch_size": batch_size,
-            "epochs": epochs,
-            "learning_rate": learning_rate,
-            "max_story_length": max_story_length,
-            "min_story_length": min_story_length,
-            "max_agent_tokens": max_agent_tokens,
-            "max_judge_tokens": max_judge_tokens
-        }
-    )
+    # Disable wandb for testing
+    # wandb.init(
+    #     project=project_name,
+    #     name=run_name,
+    #     config={
+    #         "model_name": model_name,
+    #         "batch_size": batch_size,
+    #         "epochs": epochs,
+    #         "learning_rate": learning_rate,
+    #         "max_story_length": max_story_length,
+    #         "min_story_length": min_story_length,
+    #         "max_agent_tokens": max_agent_tokens,
+    #         "max_judge_tokens": max_judge_tokens
+    #     }
+    # )
     
     # Setup logging
     log_dir = f"logs/training_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -259,17 +260,17 @@ def train_llm_gan(
             generator_optimizer.zero_grad()
             judge_optimizer.zero_grad()
             
-            # Log to wandb
-            wandb.log({
-                "epoch": epoch,
-                "batch": batch_idx,
-                "step": step,
-                "judge_accuracy": accuracy,
-                "generator_reward_mean": np.mean(generator_rewards),
-                "generator_loss": generator_loss,
-                "judge_loss": judge_loss,
-                "judge_reward_mean": np.mean(judge_rewards)
-            })
+            # Log to wandb (disabled for testing)
+            # wandb.log({
+            #     "epoch": epoch,
+            #     "batch": batch_idx,
+            #     "step": step,
+            #     "judge_accuracy": accuracy,
+            #     "generator_reward_mean": np.mean(generator_rewards),
+            #     "generator_loss": generator_loss,
+            #     "judge_loss": judge_loss,
+            #     "judge_reward_mean": np.mean(judge_rewards)
+            # })
             
             # Save detailed logs
             batch_log = {
@@ -305,11 +306,11 @@ def train_llm_gan(
         
         print(f"Epoch {epoch} Summary - Judge Accuracy: {epoch_summary['judge_accuracy']:.4f}, Generator Reward: {epoch_summary['generator_reward']:.4f}")
         
-        # Log epoch summary to wandb
-        wandb.log({
-            "epoch_judge_accuracy": epoch_summary['judge_accuracy'],
-            "epoch_generator_reward": epoch_summary['generator_reward']
-        })
+        # Log epoch summary to wandb (disabled for testing)
+        # wandb.log({
+        #     "epoch_judge_accuracy": epoch_summary['judge_accuracy'],
+        #     "epoch_generator_reward": epoch_summary['generator_reward']
+        # })
         
         # Save epoch summary
         with open(f"{log_dir}/epoch_{epoch}_summary.json", 'w') as f:
@@ -320,8 +321,8 @@ def train_llm_gan(
         torch.save(judge_model.state_dict(), f"judge_epoch_{epoch}.pt")
 
     print("Training completed successfully!")
-    wandb.finish()
+    # wandb.finish()
 
 
 if __name__ == "__main__":
-    train_llm_gan()
+    train_llm_gan(epochs=1, batch_size=4)  # Quick test
