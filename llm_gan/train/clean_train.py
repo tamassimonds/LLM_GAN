@@ -111,7 +111,7 @@ def extract_story_from_generation(story_text: str, title: str, genre: str) -> st
 
 def train_llm_gan(
     model_name: str = "meta-llama/Llama-3.2-1B-Instruct",
-    data_path: str = "data/ai_eval_stories.csv",
+    data_path: str = "data/stories.csv",
     batch_size: int = 32,
     epochs: int = 100,
     learning_rate: float = 1e-5,
