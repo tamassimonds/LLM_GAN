@@ -15,7 +15,7 @@ from llm_gan.utils.parse import parse_tags
 from .dataset import StoryDataset
 from .inference import simple_generate
 from .evaluation import assess_judge_with_outputs, calculate_rewards
-from .training import calculate_log_probs, reinforce_update
+from .training import calculate_log_probs, reinforce_update, ppo_update
 from .benchmark import run_benchmark_evaluation, save_benchmark_results, compare_benchmark_results
 
 
@@ -150,7 +150,10 @@ def train_llm_gan(
     project_name: str = "llm-gan",
     run_name: str = None,
     save_checkpoints: bool = False,
-    checkpoint_freq: int = 20
+    checkpoint_freq: int = 20,
+    use_ppo: bool = False,
+    clip_eps: float = 0.2,
+    entropy_coef: float = 0.01
 ):
     """Main training function for LLM GAN with DDP support."""
     
@@ -177,6 +180,9 @@ def train_llm_gan(
                 "max_judge_tokens": max_judge_tokens,
                 "save_checkpoints": save_checkpoints,
                 "checkpoint_freq": checkpoint_freq,
+                "use_ppo": use_ppo,
+                "clip_eps": clip_eps,
+                "entropy_coef": entropy_coef,
                 "world_size": world_size
             }
         )
@@ -223,6 +229,30 @@ def train_llm_gan(
     generator_model = generator_model.to(device)
     judge_model = judge_model.to(device)
     
+    # Create reference models for PPO (if enabled)
+    if use_ppo:
+        # Reference models are copies that stay fixed during updates
+        generator_ref_model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            dtype=torch.bfloat16
+        ).to(device)
+        judge_ref_model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            dtype=torch.bfloat16
+        ).to(device)
+        
+        # Set reference models to eval mode (no training)
+        generator_ref_model.eval()
+        judge_ref_model.eval()
+        
+        # Wrap reference models with DDP if needed (for inference only)
+        if world_size > 1:
+            generator_ref_model = DDP(generator_ref_model, device_ids=[local_rank])
+            judge_ref_model = DDP(judge_ref_model, device_ids=[local_rank])
+    else:
+        generator_ref_model = None
+        judge_ref_model = None
+    
     # Wrap models with DDP if using multiple GPUs
     if world_size > 1:
         generator_model = DDP(generator_model, device_ids=[local_rank])
@@ -255,6 +285,21 @@ def train_llm_gan(
         # Set epoch for distributed sampler
         if world_size > 1:
             sampler.set_epoch(epoch)
+        
+        # Update reference models for PPO (copy current state)
+        if use_ppo:
+            # Get the actual model (unwrap DDP if needed)
+            gen_model_for_copy = generator_model.module if world_size > 1 else generator_model
+            judge_model_for_copy = judge_model.module if world_size > 1 else judge_model
+            ref_gen_model = generator_ref_model.module if world_size > 1 else generator_ref_model
+            ref_judge_model = judge_ref_model.module if world_size > 1 else judge_ref_model
+            
+            # Copy current model state to reference models
+            ref_gen_model.load_state_dict(gen_model_for_copy.state_dict())
+            ref_judge_model.load_state_dict(judge_model_for_copy.state_dict())
+            
+            if rank == 0:
+                print(f"Updated reference models for epoch {epoch}")
             
         epoch_judge_accuracy = 0
         epoch_generator_reward = 0
@@ -329,16 +374,37 @@ def train_llm_gan(
             
             print(f"  Results: Judge Acc: {accuracy:.4f}, Avg Gen Reward: {np.mean(generator_rewards):.4f}")
             
-            # REINFORCE training updates
-            print("  Training generator with REINFORCE...")
-            generator_model.train()
-            generator_log_probs = calculate_log_probs(generator_model, tokenizer, generator_prompts, generated_stories)
-            generator_loss = reinforce_update(generator_model, generator_optimizer, generator_log_probs, generator_rewards)
-            
-            print("  Training judge with REINFORCE...")
-            judge_model.train()
-            judge_log_probs = calculate_log_probs(judge_model, tokenizer, judge_outputs['prompts'], judge_outputs['judge_outputs'])
-            judge_loss = reinforce_update(judge_model, judge_optimizer, judge_log_probs, judge_rewards)
+            # Training updates (PPO or REINFORCE)
+            if use_ppo:
+                print("  Training generator with PPO...")
+                generator_model.train()
+                generator_log_probs, generator_ref_log_probs = calculate_log_probs(
+                    generator_model, tokenizer, generator_prompts, generated_stories, generator_ref_model
+                )
+                generator_loss = ppo_update(
+                    generator_model, generator_optimizer, generator_log_probs, generator_ref_log_probs, 
+                    generator_rewards, clip_eps, entropy_coef
+                )
+                
+                print("  Training judge with PPO...")
+                judge_model.train()
+                judge_log_probs, judge_ref_log_probs = calculate_log_probs(
+                    judge_model, tokenizer, judge_outputs['prompts'], judge_outputs['judge_outputs'], judge_ref_model
+                )
+                judge_loss = ppo_update(
+                    judge_model, judge_optimizer, judge_log_probs, judge_ref_log_probs, 
+                    judge_rewards, clip_eps, entropy_coef
+                )
+            else:
+                print("  Training generator with REINFORCE...")
+                generator_model.train()
+                generator_log_probs = calculate_log_probs(generator_model, tokenizer, generator_prompts, generated_stories)
+                generator_loss = reinforce_update(generator_model, generator_optimizer, generator_log_probs, generator_rewards)
+                
+                print("  Training judge with REINFORCE...")
+                judge_model.train()
+                judge_log_probs = calculate_log_probs(judge_model, tokenizer, judge_outputs['prompts'], judge_outputs['judge_outputs'])
+                judge_loss = reinforce_update(judge_model, judge_optimizer, judge_log_probs, judge_rewards)
             
             print(f"  Training losses - Generator: {generator_loss:.4f}, Judge: {judge_loss:.4f}")
             

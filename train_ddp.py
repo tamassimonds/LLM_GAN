@@ -40,6 +40,14 @@ def main():
     parser.add_argument('--max_judge_tokens', type=int, default=1024,
                         help='Max tokens for judge')
     
+    # PPO training parameters
+    parser.add_argument('--use_ppo', action='store_true',
+                        help='Use PPO-style clipping instead of vanilla REINFORCE')
+    parser.add_argument('--clip_eps', type=float, default=0.2,
+                        help='PPO clipping parameter (default: 0.2)')
+    parser.add_argument('--entropy_coef', type=float, default=0.01,
+                        help='Entropy regularization coefficient (default: 0.01)')
+    
     # Logging and checkpointing
     parser.add_argument('--project_name', type=str, default='llm-gan-ddp',
                         help='Wandb project name')
@@ -66,7 +74,10 @@ def main():
         project_name=args.project_name,
         run_name=args.run_name,
         save_checkpoints=args.save_checkpoints,
-        checkpoint_freq=args.checkpoint_freq
+        checkpoint_freq=args.checkpoint_freq,
+        use_ppo=args.use_ppo,
+        clip_eps=args.clip_eps,
+        entropy_coef=args.entropy_coef
     )
 
 if __name__ == '__main__':
