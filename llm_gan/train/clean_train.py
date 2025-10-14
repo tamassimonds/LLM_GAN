@@ -298,6 +298,24 @@ def train_llm_gan(
             with open(f"{log_dir}/batch_{epoch}_{batch_idx}.json", 'w') as f:
                 json.dump(batch_log, f, indent=2)
             
+            # Run benchmark evaluation every 10 steps
+            if step % 10 == 0:
+                print(f"\nRunning benchmark evaluation at step {step}...")
+                benchmark_results = run_benchmark_evaluation(
+                    judge_model, tokenizer, 
+                    max_judge_tokens=max_judge_tokens,
+                    max_story_length=max_story_length
+                )
+                
+                # Log benchmark to wandb
+                wandb.log({
+                    "step": step,
+                    "benchmark_accuracy": benchmark_results['overall_accuracy'],
+                    "benchmark_failed_rate": benchmark_results['failed_rate']
+                })
+                
+                print(f"Benchmark results: Accuracy={benchmark_results['overall_accuracy']:.4f}, Failed Rate={benchmark_results['failed_rate']:.4f}")
+            
             step += 1
         
         # Epoch summary
@@ -310,35 +328,10 @@ def train_llm_gan(
         
         print(f"Epoch {epoch} Summary - Judge Accuracy: {epoch_summary['judge_accuracy']:.4f}, Generator Reward: {epoch_summary['generator_reward']:.4f}")
         
-        # Run benchmark evaluation
-        print(f"\nRunning benchmark evaluation for epoch {epoch}...")
-        benchmark_results = run_benchmark_evaluation(
-            judge_model, tokenizer, 
-            max_judge_tokens=max_judge_tokens,
-            max_story_length=max_story_length
-        )
-        
-        # Save benchmark results
-        benchmark_path = f"{log_dir}/benchmark_epoch_{epoch}.json"
-        save_benchmark_results(benchmark_results, benchmark_path)
-        
-        # Compare with previous epoch if available
-        if epoch > 0:
-            previous_benchmark_path = f"{log_dir}/benchmark_epoch_{epoch-1}.json"
-            comparison = compare_benchmark_results(benchmark_results, previous_benchmark_path)
-            print(f"Benchmark Comparison: {comparison['message']}")
-            epoch_summary['benchmark_comparison'] = comparison
-        
-        # Add benchmark results to epoch summary
-        epoch_summary['benchmark_accuracy'] = benchmark_results['overall_accuracy']
-        epoch_summary['benchmark_failed_rate'] = benchmark_results['failed_rate']
-        
         # Log epoch summary to wandb
         wandb.log({
             "epoch_judge_accuracy": epoch_summary['judge_accuracy'],
-            "epoch_generator_reward": epoch_summary['generator_reward'],
-            "benchmark_accuracy": benchmark_results['overall_accuracy'],
-            "benchmark_failed_rate": benchmark_results['failed_rate']
+            "epoch_generator_reward": epoch_summary['generator_reward']
         })
         
         # Save epoch summary
@@ -358,4 +351,4 @@ def train_llm_gan(
 
 
 if __name__ == "__main__":
-    train_llm_gan(epochs=10, batch_size=64)  # Quick test
+    train_llm_gan(epochs=10, batch_size=32)  # Quick test
