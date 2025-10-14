@@ -6,20 +6,41 @@ from torch.utils.data import Dataset as TorchDataset
 
 class StoryDataset(TorchDataset):
     def __init__(self, csv_path: str, min_story_length: int = 100):
-        # Try to read CSV with robust error handling
+        # Try to read CSV with robust error handling for multi-line stories
         try:
+            # First try standard loading
             self.data = pd.read_csv(csv_path)
         except pd.errors.ParserError as e:
             print(f"CSV parsing error: {e}")
-            print("Trying with alternative parsing options...")
+            print("Trying with alternative parsing options for multi-line content...")
             try:
-                # Try with different options for malformed CSV
-                self.data = pd.read_csv(csv_path, quoting=1, escapechar='\\', on_bad_lines='skip')
+                # Try with different options for malformed CSV with multi-line content
+                self.data = pd.read_csv(
+                    csv_path, 
+                    quoting=1,  # QUOTE_ALL
+                    skipinitialspace=True,
+                    on_bad_lines='skip',
+                    engine='python'  # More robust for malformed data
+                )
                 print("Successfully loaded with alternative parsing")
             except Exception as e2:
                 print(f"Alternative parsing also failed: {e2}")
-                raise e2
+                print("Trying with minimal options...")
+                try:
+                    # Last resort - very permissive loading
+                    self.data = pd.read_csv(
+                        csv_path,
+                        on_bad_lines='skip',
+                        engine='python',
+                        quotechar='"',
+                        doublequote=True
+                    )
+                    print("Successfully loaded with minimal parsing")
+                except Exception as e3:
+                    print(f"All parsing attempts failed: {e3}")
+                    raise e3
         
+        # Clean up the data
         self.data = self.data.dropna(subset=['title', 'genre', 'human_story'])
         
         # Filter out human stories that are too short
