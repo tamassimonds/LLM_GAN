@@ -7,7 +7,7 @@ This branch implements multi-GPU distributed training for the LLM GAN project us
 ### 1. Test DDP Setup
 ```bash
 # Test basic DDP functionality with 2 GPUs
-torchrun --nproc_per_node=2 test_ddp_setup.py
+torchrun --nproc_per_node=2 tests/test_ddp_setup.py
 ```
 
 ### 2. Launch Training
@@ -15,22 +15,22 @@ torchrun --nproc_per_node=2 test_ddp_setup.py
 #### Option A: Using the launch script (recommended)
 ```bash
 # Quick test (2 GPUs, 5 epochs)
-./run_ddp_training.sh test
+scripts/run_ddp_training.sh test
 
 # Medium training (4 GPUs, 20 epochs)
-./run_ddp_training.sh small
+scripts/run_ddp_training.sh small
 
 # Full training (all GPUs, 100 epochs, save checkpoints)
-./run_ddp_training.sh full
+scripts/run_ddp_training.sh full
 ```
 
 #### Option B: Direct torchrun commands
 ```bash
 # Test with 2 GPUs
-torchrun --nproc_per_node=2 train_ddp.py --batch_size 16 --epochs 5
+torchrun --nproc_per_node=2 scripts/train_ddp.py --batch_size 16 --epochs 5
 
 # Full training with 8 GPUs
-torchrun --nproc_per_node=8 train_ddp.py --batch_size 8 --epochs 100 --save_checkpoints
+torchrun --nproc_per_node=8 scripts/train_ddp.py --batch_size 8 --epochs 100 --save_checkpoints
 ```
 
 ## Key Changes for DDP

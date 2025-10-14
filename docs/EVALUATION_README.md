@@ -35,10 +35,10 @@ OPENAI_API_KEY=your-api-key-here
 
 ```bash
 # Basic comparison
-python evaluate_generators.py logs/training_logs_A logs/training_logs_B --num_pairs 50
+python scripts/evaluate_generators.py logs/training_logs_A logs/training_logs_B --num_pairs 50
 
 # Detailed comparison
-python evaluate_generators.py logs/baseline logs/improved \
+python scripts/evaluate_generators.py logs/baseline logs/improved \
     --label_a "Baseline Model" --label_b "Improved Model" \
     --num_pairs 100 --output_dir results/baseline_vs_improved \
     --gpt_model gpt-4o
@@ -48,12 +48,12 @@ python evaluate_generators.py logs/baseline logs/improved \
 
 ### Basic Evaluation
 ```bash
-python evaluate_generators.py logs/run_1 logs/run_2 --num_pairs 50
+python scripts/evaluate_generators.py logs/run_1 logs/run_2 --num_pairs 50
 ```
 
 ### Custom Labels and Output Directory
 ```bash
-python evaluate_generators.py logs/baseline logs/improved \
+python scripts/evaluate_generators.py logs/baseline logs/improved \
     --label_a "Baseline" --label_b "Improved" \
     --output_dir results/comparison_1 \
     --num_pairs 100
@@ -61,14 +61,14 @@ python evaluate_generators.py logs/baseline logs/improved \
 
 ### Genre-Matched Sampling
 ```bash
-python evaluate_generators.py logs/run_A logs/run_B \
+python scripts/evaluate_generators.py logs/run_A logs/run_B \
     --strategy genre_matched \
     --num_pairs 75
 ```
 
 ### Creativity-Focused Evaluation
 ```bash
-python evaluate_generators.py logs/run_1 logs/run_2 \
+python scripts/evaluate_generators.py logs/run_1 logs/run_2 \
     --criteria creativity \
     --gpt_model gpt-4 \
     --num_pairs 100
@@ -76,14 +76,14 @@ python evaluate_generators.py logs/run_1 logs/run_2 \
 
 ### Rate-Limited for API Limits
 ```bash
-python evaluate_generators.py logs/run_A logs/run_B \
+python scripts/evaluate_generators.py logs/run_A logs/run_B \
     --delay 2.0 \
     --num_pairs 200
 ```
 
 ### Analyze Existing Results
 ```bash
-python evaluate_generators.py --analyze_only results/comparison_1
+python scripts/evaluate_generators.py --analyze_only results/comparison_1
 ```
 
 ## Command Line Options

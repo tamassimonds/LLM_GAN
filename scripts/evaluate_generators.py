@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Optional
 
 # Add project root to path
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from llm_gan.eval.eval_runner import run_evaluation, EvaluationConfig

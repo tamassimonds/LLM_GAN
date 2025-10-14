@@ -4,7 +4,6 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
-import wandb
 import numpy as np
 import json
 import os
@@ -160,6 +159,7 @@ def train_llm_gan(
     
     # Only initialize wandb on rank 0
     if rank == 0:
+        import wandb
         if run_name is None:
             run_name = f"llm_gan_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         wandb.init(
@@ -346,6 +346,7 @@ def train_llm_gan(
             
             # Log to wandb (only on rank 0)
             if rank == 0:
+                import wandb
                 wandb.log({
                     "epoch": epoch,
                     "batch": batch_idx,
@@ -391,6 +392,7 @@ def train_llm_gan(
                 )
                 
                 # Log benchmark to wandb
+                import wandb
                 wandb.log({
                     "step": step,
                     "benchmark_accuracy": benchmark_results['overall_accuracy'],
@@ -413,6 +415,7 @@ def train_llm_gan(
             print(f"Epoch {epoch} Summary - Judge Accuracy: {epoch_summary['judge_accuracy']:.4f}, Generator Reward: {epoch_summary['generator_reward']:.4f}")
             
             # Log epoch summary to wandb
+            import wandb
             wandb.log({
                 "epoch_judge_accuracy": epoch_summary['judge_accuracy'],
                 "epoch_generator_reward": epoch_summary['generator_reward']
@@ -436,6 +439,7 @@ def train_llm_gan(
 
     if rank == 0:
         print("Training completed successfully!")
+        import wandb
         wandb.finish()
     
     # Clean up distributed
