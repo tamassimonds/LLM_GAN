@@ -11,6 +11,7 @@ from datetime import datetime
 from llm_gan.prompts import llm_generator_prompt, llm_generator_discriminator_prompt
 from llm_gan.utils.parse import parse_tags, parse_boxed
 from .dataset import StoryDataset
+from .benchmark import run_benchmark_evaluation, save_benchmark_results, compare_benchmark_results
 
 
 

@@ -27,30 +27,35 @@ def extract_story_from_generation(story_text: str, title: str, genre: str) -> st
         
         text_lower = text.lower().strip()
         
-        # Common placeholder patterns
-        placeholder_patterns = [
-            "your story here",
-            "story here", 
-            "write your story",
-            "**your story here**",
-            "*your story here*",
-            "[story]",
-            "[placeholder",
-            "insert story",
-            "add story",
-            "story content"
-        ]
-        
-        # Check if text matches any placeholder pattern
-        for pattern in placeholder_patterns:
-            if pattern in text_lower:
-                print(f"PLACEHOLDER DETECTED: '{text}' matches pattern '{pattern}'")
-                return True
-        
         # Check if text is too short to be meaningful
         if len(text.strip()) < 20:
-            print(f"PLACEHOLDER DETECTED: Text too short: '{text}'")
             return True
+        
+        # Only check for exact placeholder matches, not substrings that might be in examples
+        exact_placeholder_patterns = [
+            "your story here",
+            "**your story here**",
+            "*your story here*",
+            "write your story",
+            "story here",
+            "[story]",
+            "insert story here",
+            "add your story",
+            "put your story here"
+        ]
+        
+        # Check if text IS a placeholder pattern (not just contains it)
+        for pattern in exact_placeholder_patterns:
+            if text_lower == pattern or text_lower == pattern.strip('*'):
+                print(f"PLACEHOLDER DETECTED: Exact match '{text}' for pattern '{pattern}'")
+                return True
+        
+        # Check for standalone placeholder phrases (surrounded by whitespace/punctuation)
+        import re
+        for pattern in ["your story here", "story here"]:
+            if re.search(r'\b' + re.escape(pattern) + r'\b', text_lower) and len(text.strip()) < 50:
+                print(f"PLACEHOLDER DETECTED: Standalone phrase '{text}' matches '{pattern}'")
+                return True
             
         return False
     
@@ -351,4 +356,4 @@ def train_llm_gan(
 
 
 if __name__ == "__main__":
-    train_llm_gan(epochs=1, batch_size=4)  # Quick test
+    train_llm_gan(epochs=10, batch_size=64)  # Quick test
