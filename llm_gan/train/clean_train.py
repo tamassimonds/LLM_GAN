@@ -1,6 +1,9 @@
-"""Clean LLM GAN training script with wandb logging."""
+"""Clean LLM GAN training script with wandb logging and DDP support."""
 
 import torch
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
 import wandb
 import numpy as np
 import json
@@ -15,6 +18,32 @@ from .inference import simple_generate
 from .evaluation import assess_judge_with_outputs, calculate_rewards
 from .training import calculate_log_probs, reinforce_update
 from .benchmark import run_benchmark_evaluation, save_benchmark_results, compare_benchmark_results
+
+
+def setup_distributed():
+    """Setup distributed training environment."""
+    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+        # Running with torchrun
+        rank = int(os.environ['RANK'])
+        world_size = int(os.environ['WORLD_SIZE'])
+        local_rank = int(os.environ['LOCAL_RANK'])
+    else:
+        # Single GPU fallback
+        rank = 0
+        world_size = 1
+        local_rank = 0
+    
+    if world_size > 1:
+        dist.init_process_group(backend='nccl')
+        torch.cuda.set_device(local_rank)
+    
+    return rank, world_size, local_rank
+
+
+def cleanup_distributed():
+    """Cleanup distributed training."""
+    if dist.is_initialized():
+        dist.destroy_process_group()
 
 
 def extract_story_from_generation(story_text: str, title: str, genre: str) -> str:
@@ -123,38 +152,52 @@ def train_llm_gan(
     run_name: str = None,
     save_checkpoints: bool = False
 ):
-    """Main training function for LLM GAN."""
+    """Main training function for LLM GAN with DDP support."""
     
-    # Initialize wandb
-    if run_name is None:
-        run_name = f"llm_gan_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    # Setup distributed training
+    rank, world_size, local_rank = setup_distributed()
+    device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
     
-    wandb.init(
-        project=project_name,
-        name=run_name,
-        config={
-            "model_name": model_name,
-            "batch_size": batch_size,
-            "epochs": epochs,
-            "learning_rate": learning_rate,
-            "max_story_length": max_story_length,
-            "min_story_length": min_story_length,
-            "max_agent_tokens": max_agent_tokens,
-            "max_judge_tokens": max_judge_tokens,
-            "save_checkpoints": save_checkpoints
-        }
-    )
-    
-    # Setup logging
-    log_dir = f"logs/training_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    os.makedirs(log_dir, exist_ok=True)
+    # Only initialize wandb on rank 0
+    if rank == 0:
+        if run_name is None:
+            run_name = f"llm_gan_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        wandb.init(
+            project=project_name,
+            name=run_name,
+            config={
+                "model_name": model_name,
+                "batch_size": batch_size,
+                "epochs": epochs,
+                "learning_rate": learning_rate,
+                "max_story_length": max_story_length,
+                "min_story_length": min_story_length,
+                "max_agent_tokens": max_agent_tokens,
+                "max_judge_tokens": max_judge_tokens,
+                "save_checkpoints": save_checkpoints,
+                "world_size": world_size
+            }
+        )
+        
+        # Setup logging (only on rank 0)
+        log_dir = f"logs/training_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        os.makedirs(log_dir, exist_ok=True)
+    else:
+        log_dir = None
     
     # Load dataset
     def collate_fn(batch):
         return batch
     
     dataset = StoryDataset(data_path, min_story_length=min_story_length)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+    
+    # Setup distributed sampler
+    if world_size > 1:
+        sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, sampler=sampler, collate_fn=collate_fn)
+    else:
+        sampler = None
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
     
     # Load models and tokenizer
     from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -164,16 +207,25 @@ def train_llm_gan(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     
+    # Load models without device_map for DDP
     generator_model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        dtype=torch.bfloat16,
-        device_map="auto"
+        dtype=torch.bfloat16
     )
     judge_model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        dtype=torch.bfloat16,
-        device_map="auto"
+        dtype=torch.bfloat16
     )
+    
+    # Move models to device
+    generator_model = generator_model.to(device)
+    judge_model = judge_model.to(device)
+    
+    # Wrap models with DDP if using multiple GPUs
+    if world_size > 1:
+        generator_model = DDP(generator_model, device_ids=[local_rank])
+        judge_model = DDP(judge_model, device_ids=[local_rank])
+    
     torch.backends.cuda.matmul.allow_tf32 = True
     
     # Setup optimizers
@@ -190,12 +242,18 @@ def train_llm_gan(
         if not torch.isfinite(param).all():
             print(f"ERROR: Judge model parameter {name} contains inf/nan values at startup!")
 
-    print(f"Starting training with {len(dataset)} samples, {len(dataloader)} batches...")
-    print(f"Logging to: {log_dir}")
+    if rank == 0:
+        print(f"Starting training with {len(dataset)} samples, {len(dataloader)} batches...")
+        print(f"World size: {world_size}")
+        print(f"Logging to: {log_dir}")
     
     # Training loop
     step = 0
     for epoch in range(epochs):
+        # Set epoch for distributed sampler
+        if world_size > 1:
+            sampler.set_epoch(epoch)
+            
         epoch_judge_accuracy = 0
         epoch_generator_reward = 0
         
@@ -286,45 +344,48 @@ def train_llm_gan(
             generator_optimizer.zero_grad()
             judge_optimizer.zero_grad()
             
-            # Log to wandb
-            wandb.log({
-                "epoch": epoch,
-                "batch": batch_idx,
-                "step": step,
-                "judge_accuracy": accuracy,
-                "generator_reward_mean": np.mean(generator_rewards),
-                "generator_loss": generator_loss,
-                "judge_loss": judge_loss,
-                "judge_reward_mean": np.mean(judge_rewards)
-            })
+            # Log to wandb (only on rank 0)
+            if rank == 0:
+                wandb.log({
+                    "epoch": epoch,
+                    "batch": batch_idx,
+                    "step": step,
+                    "judge_accuracy": accuracy,
+                    "generator_reward_mean": np.mean(generator_rewards),
+                    "generator_loss": generator_loss,
+                    "judge_loss": judge_loss,
+                    "judge_reward_mean": np.mean(judge_rewards)
+                })
+                
+                # Save detailed logs
+                batch_log = {
+                    'epoch': epoch,
+                    'batch_idx': batch_idx,
+                    'step': step,
+                    'titles': titles,
+                    'genres': genres,
+                    'human_stories': human_stories,
+                    'generator_prompts': generator_prompts,
+                    'generated_stories_raw': generated_stories_raw,
+                    'generated_stories': generated_stories,
+                    'judge_data': judge_outputs,
+                    'judge_accuracy': accuracy,
+                    'generator_rewards': generator_rewards,
+                    'judge_rewards': judge_rewards,
+                    'generator_loss': generator_loss,
+                    'judge_loss': judge_loss
+                }
+                
+                with open(f"{log_dir}/batch_{epoch}_{batch_idx}.json", 'w') as f:
+                    json.dump(batch_log, f, indent=2)
             
-            # Save detailed logs
-            batch_log = {
-                'epoch': epoch,
-                'batch_idx': batch_idx,
-                'step': step,
-                'titles': titles,
-                'genres': genres,
-                'human_stories': human_stories,
-                'generator_prompts': generator_prompts,
-                'generated_stories_raw': generated_stories_raw,
-                'generated_stories': generated_stories,
-                'judge_data': judge_outputs,
-                'judge_accuracy': accuracy,
-                'generator_rewards': generator_rewards,
-                'judge_rewards': judge_rewards,
-                'generator_loss': generator_loss,
-                'judge_loss': judge_loss
-            }
-            
-            with open(f"{log_dir}/batch_{epoch}_{batch_idx}.json", 'w') as f:
-                json.dump(batch_log, f, indent=2)
-            
-            # Run benchmark evaluation every 10 steps
-            if step % 10 == 0:
+            # Run benchmark evaluation every 10 steps (only on rank 0)
+            if step % 10 == 0 and rank == 0:
                 print(f"\nRunning benchmark evaluation at step {step}...")
+                # Get underlying model for DDP
+                eval_judge_model = judge_model.module if world_size > 1 else judge_model
                 benchmark_results = run_benchmark_evaluation(
-                    judge_model, tokenizer, 
+                    eval_judge_model, tokenizer, 
                     max_judge_tokens=max_judge_tokens,
                     max_story_length=max_story_length
                 )
@@ -348,28 +409,37 @@ def train_llm_gan(
             'total_batches': len(dataloader)
         }
         
-        print(f"Epoch {epoch} Summary - Judge Accuracy: {epoch_summary['judge_accuracy']:.4f}, Generator Reward: {epoch_summary['generator_reward']:.4f}")
-        
-        # Log epoch summary to wandb
-        wandb.log({
-            "epoch_judge_accuracy": epoch_summary['judge_accuracy'],
-            "epoch_generator_reward": epoch_summary['generator_reward']
-        })
-        
-        # Save epoch summary
-        with open(f"{log_dir}/epoch_{epoch}_summary.json", 'w') as f:
-            json.dump(epoch_summary, f, indent=2)
-        
-        # Save model checkpoints (if enabled)
-        if save_checkpoints:
-            torch.save(generator_model.state_dict(), f"generator_epoch_{epoch}.pt")
-            torch.save(judge_model.state_dict(), f"judge_epoch_{epoch}.pt")
-            print(f"Saved model checkpoints for epoch {epoch}")
-        else:
-            print(f"Skipping checkpoint save for epoch {epoch} (save_checkpoints=False)")
+        if rank == 0:
+            print(f"Epoch {epoch} Summary - Judge Accuracy: {epoch_summary['judge_accuracy']:.4f}, Generator Reward: {epoch_summary['generator_reward']:.4f}")
+            
+            # Log epoch summary to wandb
+            wandb.log({
+                "epoch_judge_accuracy": epoch_summary['judge_accuracy'],
+                "epoch_generator_reward": epoch_summary['generator_reward']
+            })
+            
+            # Save epoch summary
+            with open(f"{log_dir}/epoch_{epoch}_summary.json", 'w') as f:
+                json.dump(epoch_summary, f, indent=2)
+            
+            # Save model checkpoints (if enabled)
+            if save_checkpoints:
+                # Get underlying model state dict for DDP
+                gen_state_dict = generator_model.module.state_dict() if world_size > 1 else generator_model.state_dict()
+                judge_state_dict = judge_model.module.state_dict() if world_size > 1 else judge_model.state_dict()
+                
+                torch.save(gen_state_dict, f"generator_epoch_{epoch}.pt")
+                torch.save(judge_state_dict, f"judge_epoch_{epoch}.pt")
+                print(f"Saved model checkpoints for epoch {epoch}")
+            else:
+                print(f"Skipping checkpoint save for epoch {epoch} (save_checkpoints=False)")
 
-    print("Training completed successfully!")
-    wandb.finish()
+    if rank == 0:
+        print("Training completed successfully!")
+        wandb.finish()
+    
+    # Clean up distributed
+    cleanup_distributed()
 
 
 if __name__ == "__main__":

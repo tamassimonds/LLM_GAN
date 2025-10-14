@@ -6,11 +6,14 @@ from typing import List
 
 def simple_generate(model, tokenizer, prompts: List[str], max_new_tokens=512, temperature=0.8, batch_size=32) -> List[str]:
     """Simple batch generation with proper model state management."""
+    # Get underlying model if wrapped with DDP
+    underlying_model = model.module if hasattr(model, 'module') else model
+    
     # Ensure model is in eval mode and gradients are cleared
-    model.eval()
+    underlying_model.eval()
     
     # Check model parameters for corruption before generation
-    for name, param in model.named_parameters():
+    for name, param in underlying_model.named_parameters():
         if not torch.isfinite(param).all():
             print(f"ERROR: Model parameter {name} contains inf/nan values!")
             raise RuntimeError(f"Model corrupted: {name} has non-finite values")
@@ -31,11 +34,11 @@ def simple_generate(model, tokenizer, prompts: List[str], max_new_tokens=512, te
             )
             
             # Move to model device
-            device = next(model.parameters()).device
+            device = next(underlying_model.parameters()).device
             encoded = {k: v.to(device) for k, v in encoded.items()}
             
             # Generate
-            outputs = model.generate(
+            outputs = underlying_model.generate(
                 **encoded,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,

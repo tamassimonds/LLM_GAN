@@ -16,6 +16,7 @@ class StoryDataset(TorchDataset):
         
         # Filter out human stories that are too short
         self.data = self.data[self.data['human_story'].str.len() >= min_story_length]
+        self.data['human_story'] = self.data['human_story'].str.strip()
         
         print(f"Loaded {len(self.data)} stories (filtered to have human stories >= {min_story_length} characters)")
         
