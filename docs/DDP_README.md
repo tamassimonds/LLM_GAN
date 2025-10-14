@@ -27,10 +27,13 @@ scripts/run_ddp_training.sh full
 #### Option B: Direct torchrun commands
 ```bash
 # Test with 2 GPUs
-torchrun --nproc_per_node=2 scripts/train_ddp.py --batch_size 16 --epochs 5
+torchrun --nproc_per_node=2 train_ddp.py --batch_size 16 --epochs 5
 
 # Full training with 8 GPUs
-torchrun --nproc_per_node=8 scripts/train_ddp.py --batch_size 8 --epochs 100 --save_checkpoints
+torchrun --nproc_per_node=8 train_ddp.py --batch_size 8 --epochs 100 --save_checkpoints
+
+# Full training with frequent checkpointing every 10 steps
+torchrun --nproc_per_node=8 train_ddp.py --batch_size 8 --epochs 100 --save_checkpoints --checkpoint_freq 10
 ```
 
 ## Key Changes for DDP
@@ -53,6 +56,9 @@ torchrun --nproc_per_node=8 scripts/train_ddp.py --batch_size 8 --epochs 100 --s
 - Only rank 0 performs logging and saves files
 - Benchmark evaluation only runs on rank 0
 - Model checkpoints save underlying model state dict
+- **Step-based checkpointing**: Save every N steps with `--checkpoint_freq` (default: 20)
+- **Epoch-based checkpointing**: Save at end of each epoch (existing behavior)
+- Checkpoint files: `generator_step_X.pt`, `judge_step_X.pt`, `generator_epoch_X.pt`, `judge_epoch_X.pt`
 
 ## Performance Benefits
 

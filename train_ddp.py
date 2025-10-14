@@ -47,6 +47,8 @@ def main():
                         help='Wandb run name (auto-generated if None)')
     parser.add_argument('--save_checkpoints', action='store_true',
                         help='Save model checkpoints')
+    parser.add_argument('--checkpoint_freq', type=int, default=20,
+                        help='Save checkpoints every N steps (default: 20)')
     
     args = parser.parse_args()
     
@@ -63,7 +65,8 @@ def main():
         max_judge_tokens=args.max_judge_tokens,
         project_name=args.project_name,
         run_name=args.run_name,
-        save_checkpoints=args.save_checkpoints
+        save_checkpoints=args.save_checkpoints,
+        checkpoint_freq=args.checkpoint_freq
     )
 
 if __name__ == '__main__':

@@ -149,7 +149,8 @@ def train_llm_gan(
     max_judge_tokens: int = 1024,
     project_name: str = "llm-gan",
     run_name: str = None,
-    save_checkpoints: bool = False
+    save_checkpoints: bool = False,
+    checkpoint_freq: int = 20
 ):
     """Main training function for LLM GAN with DDP support."""
     
@@ -175,6 +176,7 @@ def train_llm_gan(
                 "max_agent_tokens": max_agent_tokens,
                 "max_judge_tokens": max_judge_tokens,
                 "save_checkpoints": save_checkpoints,
+                "checkpoint_freq": checkpoint_freq,
                 "world_size": world_size
             }
         )
@@ -402,6 +404,16 @@ def train_llm_gan(
                 print(f"Benchmark results: Accuracy={benchmark_results['overall_accuracy']:.4f}, Failed Rate={benchmark_results['failed_rate']:.4f}")
             
             step += 1
+            
+            # Save step-based checkpoints (only on rank 0)
+            if rank == 0 and save_checkpoints and step % checkpoint_freq == 0:
+                # Get underlying model state dict for DDP
+                gen_state_dict = generator_model.module.state_dict() if world_size > 1 else generator_model.state_dict()
+                judge_state_dict = judge_model.module.state_dict() if world_size > 1 else judge_model.state_dict()
+                
+                torch.save(gen_state_dict, f"generator_step_{step}.pt")
+                torch.save(judge_state_dict, f"judge_step_{step}.pt")
+                print(f"Saved model checkpoints at step {step}")
         
         # Epoch summary
         epoch_summary = {

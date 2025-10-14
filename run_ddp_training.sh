@@ -45,11 +45,11 @@ case "$1" in
         ;;
     "small")
         echo "Running small training with 4 GPUs..."
-        run_training 4 8 20 "--project_name llm-gan-ddp-small"
+        run_training 4 32 20 "--project_name llm-gan-ddp-small"
         ;;
     "full")
         echo "Running full training with all available GPUs..."
-        run_training $NUM_GPUS 4 100 "--save_checkpoints --project_name llm-gan-ddp-full"
+        run_training $NUM_GPUS 32 100 "--save_checkpoints --project_name llm-gan-ddp-full"
         ;;
     *)
         echo "Usage: $0 {test|small|full}"
