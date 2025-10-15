@@ -22,7 +22,7 @@ class EvaluationConfig:
     num_pairs: int = 100
     sampling_strategy: str = "balanced"
     evaluation_criteria: EvaluationCriteria = EvaluationCriteria.OVERALL_QUALITY
-    gpt_model: str = "gpt-4o"
+    gpt_model: str = "gpt-5"
     min_story_length: int = 50
     filter_placeholders: bool = True
     delay_between_calls: float = 1.0
@@ -104,14 +104,16 @@ class EvaluationRunner:
         # Step 3: Run GPT evaluations
         print(f"\nStep 3: Running GPT evaluations with {self.config.gpt_model}...")
         print(f"  Criteria: {self.config.evaluation_criteria.value}")
-        print(f"  Rate limit: {self.config.delay_between_calls}s between calls")
+        print(f"  Using batch processing for faster evaluation")
         
         try:
-            evaluation_results = evaluate_story_pairs(
+            from .gpt_evaluator import GPTEvaluator
+            evaluator = GPTEvaluator(model=self.config.gpt_model)
+            
+            # Use batch evaluation for faster processing
+            evaluation_results = evaluator.evaluate_pairs_batch(
                 pairs,
-                model=self.config.gpt_model,
-                criteria=self.config.evaluation_criteria,
-                delay_between_calls=self.config.delay_between_calls
+                criteria=self.config.evaluation_criteria
             )
         except Exception as e:
             print(f"Error during GPT evaluation: {e}")
