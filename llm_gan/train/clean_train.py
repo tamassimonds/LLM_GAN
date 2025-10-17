@@ -509,7 +509,7 @@ def train_llm_gan(
                     print("  Training judge with REINFORCE...")
                     judge_model.train()
                     judge_log_probs = calculate_log_probs(judge_model, tokenizer, judge_outputs['prompts'], judge_outputs['judge_outputs'])
-                    judge_loss = reinforce_update(judge_model, judge_optimizer, judge_log_probs, judge_rewards)
+                    judge_loss = reinforce_update(judge_model, judge_optimizer, judge_log_probs, judge_rewards, max_judge_tokens)
                 
                 print(f"  Training losses - Generator: {generator_loss:.4f}, Judge: {judge_loss:.4f}")
                 

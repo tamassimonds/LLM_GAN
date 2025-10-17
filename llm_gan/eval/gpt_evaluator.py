@@ -93,14 +93,18 @@ class GPTEvaluator:
             return []
         
         print(f"  🚀 Running batch evaluation of {len(pairs)} pairs...")
+        print(f"  📝 Model: {self.model}")
         
         # Create batch prompt with all pairs
         batch_prompt = self._create_batch_evaluation_prompt(pairs, criteria)
+        print(f"  📏 Prompt length: {len(batch_prompt)} characters")
         
         start_time = time.time()
         
         for attempt in range(max_retries):
             try:
+                print(f"  🔄 API attempt {attempt + 1}/{max_retries}...")
+                
                 # Prepare API parameters based on model
                 api_params = {
                     "model": self.model,
@@ -120,14 +124,23 @@ class GPTEvaluator:
                 if not self.model.startswith('gpt-5'):
                     api_params["temperature"] = 0.3
                     api_params["max_tokens"] = 4000  # Larger for batch response
+                    print(f"  ⚙️  Using temperature=0.3, max_tokens=4000")
+                else:
+                    print(f"  ⚙️  GPT-5 detected - no temperature/max_tokens")
                 
+                print(f"  📡 Making API call...")
                 response = self.client.chat.completions.create(**api_params)
+                print(f"  ✅ API call successful!")
                 
                 evaluation_time = time.time() - start_time
                 raw_response = response.choices[0].message.content
+                print(f"  📦 Response length: {len(raw_response)} characters")
+                print(f"  📄 Response preview: {raw_response[:200]}...")
                 
                 # Parse batch response
+                print(f"  🔍 Parsing batch response...")
                 results = self._parse_batch_response(raw_response, pairs, criteria, self.model, evaluation_time / len(pairs))
+                print(f"  📊 Parsed {len(results)} results")
                 
                 print(f"  ✅ Batch evaluation completed in {evaluation_time:.2f}s")
                 return results
@@ -215,11 +228,11 @@ class GPTEvaluator:
                 # Wait before retrying
                 time.sleep(2 ** attempt)
     
-    def evaluate_pairs_batch(self, pairs: List[StoryPair], 
-                           criteria: EvaluationCriteria = EvaluationCriteria.OVERALL_QUALITY,
-                           delay_between_calls: float = 1.0) -> List[EvaluationResult]:
+    def evaluate_pairs_sequential(self, pairs: List[StoryPair], 
+                                criteria: EvaluationCriteria = EvaluationCriteria.OVERALL_QUALITY,
+                                delay_between_calls: float = 1.0) -> List[EvaluationResult]:
         """
-        Evaluate multiple story pairs with rate limiting.
+        Evaluate multiple story pairs sequentially with rate limiting.
         
         Args:
             pairs: List of StoryPair objects to evaluate
@@ -334,7 +347,7 @@ Focus specifically on {criteria_desc} in your evaluation. Consider factors like 
     def _create_batch_evaluation_prompt(self, pairs: List[StoryPair], criteria: EvaluationCriteria) -> str:
         """Create a prompt for batch evaluation of multiple story pairs."""
         criteria_descriptions = {
-            EvaluationCriteria.OVERALL_QUALITY: "overall quality and writing excellence including narrative structure, prose quality, and overall effectiveness",
+            EvaluationCriteria.OVERALL_QUALITY: "overall story quality including narrative coherence, prose quality, character development, and readability",
             EvaluationCriteria.CREATIVITY: "creativity, originality, and imaginative elements in the storytelling",
             EvaluationCriteria.COHERENCE: "narrative logic, consistency, and structural coherence", 
             EvaluationCriteria.STYLE: "prose quality, writing style, and linguistic sophistication",
@@ -344,6 +357,13 @@ Focus specifically on {criteria_desc} in your evaluation. Consider factors like 
         criteria_desc = criteria_descriptions.get(criteria, criteria_descriptions[EvaluationCriteria.OVERALL_QUALITY])
         
         prompt = f"""I will present you with {len(pairs)} pairs of stories. For each pair, evaluate which story is better in terms of {criteria_desc}.
+
+Focus purely on the quality of the stories themselves - ignore any titles, genres, or prompts. Judge based on:
+- Narrative coherence and flow
+- Prose quality and readability  
+- Character development (if present)
+- Overall storytelling effectiveness
+- Absence of repetition or incoherence
 
 For each pair, analyze both stories and determine which is superior, providing your confidence level (0.1-1.0).
 
@@ -366,13 +386,13 @@ Here are the story pairs to evaluate:
 
         for i, pair in enumerate(pairs):
             prompt += f"""
-=== PAIR {i+1} (ID: {pair.pair_id}) ===
+=== PAIR {i+1} (ID: {pair.comparison_id}) ===
 
 **STORY A:**
-{pair.story_a[:2000]}{"..." if len(pair.story_a) > 2000 else ""}
+{pair.story_a.story[:2000]}{"..." if len(pair.story_a.story) > 2000 else ""}
 
 **STORY B:** 
-{pair.story_b[:2000]}{"..." if len(pair.story_b) > 2000 else ""}
+{pair.story_b.story[:2000]}{"..." if len(pair.story_b.story) > 2000 else ""}
 
 """
 
@@ -387,21 +407,29 @@ Please evaluate all pairs and return the JSON response with your evaluations."""
         results = []
         
         try:
+            print(f"    🔍 Looking for JSON in response...")
             # Try to extract JSON from response
             json_start = response.find('{')
             json_end = response.rfind('}') + 1
+            print(f"    📍 JSON bounds: start={json_start}, end={json_end}")
             
             if json_start != -1 and json_end > json_start:
                 json_str = response[json_start:json_end]
+                print(f"    📝 Extracted JSON length: {len(json_str)} chars")
+                print(f"    📝 JSON preview: {json_str[:200]}...")
+                
                 data = json.loads(json_str)
+                print(f"    ✅ JSON parsed successfully")
+                
                 evaluations = data.get('evaluations', [])
+                print(f"    📊 Found {len(evaluations)} evaluations in JSON")
                 
                 # Create results for each evaluation
                 for i, evaluation in enumerate(evaluations):
                     if i < len(pairs):
                         pair = pairs[i]
                         result = EvaluationResult(
-                            pair_id=evaluation.get('pair_id', pair.pair_id),
+                            pair_id=evaluation.get('pair_id', pair.comparison_id),
                             winner=evaluation.get('winner', 'A'),
                             confidence=float(evaluation.get('confidence', 0.5)),
                             reasoning=evaluation.get('reasoning', 'Batch evaluation'),
@@ -416,7 +444,7 @@ Please evaluate all pairs and return the JSON response with your evaluations."""
                 while len(results) < len(pairs):
                     pair = pairs[len(results)]
                     result = EvaluationResult(
-                        pair_id=pair.pair_id,
+                        pair_id=pair.comparison_id,
                         winner='A',
                         confidence=0.5,
                         reasoning='Batch parsing incomplete',
@@ -435,7 +463,7 @@ Please evaluate all pairs and return the JSON response with your evaluations."""
             # Fallback: create default results
             for pair in pairs:
                 result = EvaluationResult(
-                    pair_id=pair.pair_id,
+                    pair_id=pair.comparison_id,
                     winner='A',
                     confidence=0.5,
                     reasoning=f'Batch parsing failed: {str(e)}',
