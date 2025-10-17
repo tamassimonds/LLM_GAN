@@ -572,25 +572,25 @@ def train_llm_gan(
                         json.dump(batch_log, f, indent=2)
                 
                 # Run benchmark evaluation every 10 steps (only on rank 0)
-                if step % 10 == 0 and rank == 0:
-                    print(f"\nRunning benchmark evaluation at step {step}...")
-                    # Get underlying model for DDP
-                    eval_judge_model = judge_model.module if world_size > 1 else judge_model
-                    benchmark_results = run_benchmark_evaluation(
-                        eval_judge_model, tokenizer, 
-                        max_judge_tokens=max_judge_tokens,
-                        max_story_length=max_story_length
-                    )
-                    
-                    # Log benchmark to wandb
-                    import wandb
-                    wandb.log({
-                        "step": step,
-                        "benchmark_accuracy": benchmark_results['overall_accuracy'],
-                        "benchmark_failed_rate": benchmark_results['failed_rate']
-                    })
-                    
-                    print(f"Benchmark results: Accuracy={benchmark_results['overall_accuracy']:.4f}, Failed Rate={benchmark_results['failed_rate']:.4f}")
+                # TEMPORARILY DISABLED: if step % 10 == 0 and rank == 0:
+                # TEMPORARILY DISABLED:     print(f"\nRunning benchmark evaluation at step {step}...")
+                # TEMPORARILY DISABLED:     # Get underlying model for DDP
+                # TEMPORARILY DISABLED:     eval_judge_model = judge_model.module if world_size > 1 else judge_model
+                # TEMPORARILY DISABLED:     benchmark_results = run_benchmark_evaluation(
+                # TEMPORARILY DISABLED:         eval_judge_model, tokenizer, 
+                # TEMPORARILY DISABLED:         max_judge_tokens=max_judge_tokens,
+                # TEMPORARILY DISABLED:         max_story_length=max_story_length
+                # TEMPORARILY DISABLED:     )
+                # TEMPORARILY DISABLED:     
+                # TEMPORARILY DISABLED:     # Log benchmark to wandb
+                # TEMPORARILY DISABLED:     import wandb
+                # TEMPORARILY DISABLED:     wandb.log({
+                # TEMPORARILY DISABLED:         "step": step,
+                # TEMPORARILY DISABLED:         "benchmark_accuracy": benchmark_results['overall_accuracy'],
+                # TEMPORARILY DISABLED:         "benchmark_failed_rate": benchmark_results['failed_rate']
+                # TEMPORARILY DISABLED:     })
+                # TEMPORARILY DISABLED:     
+                # TEMPORARILY DISABLED:     print(f"Benchmark results: Accuracy={benchmark_results['overall_accuracy']:.4f}, Failed Rate={benchmark_results['failed_rate']:.4f}")
                 
                 step += 1
                 

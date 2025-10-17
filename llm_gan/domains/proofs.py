@@ -81,9 +81,6 @@ Give your reasoning briefly, then put your final answer in \\boxed{{1}} or \\box
         # Use no tags by default for proofs - just get everything after assistant
         output = super().extract_output(generated_text, use_tags=use_tags)
         
-        # Debug: print what we extracted
-        print(f"DEBUG: Extracted output length: {len(output)}, preview: {output[:200]}...")
-        
         return output
     
     def get_evaluation_criteria(self) -> List[str]:
