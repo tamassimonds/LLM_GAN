@@ -11,6 +11,23 @@ class CreativeWritingDomain(BaseDomain):
         """Return required CSV columns for creative writing."""
         return ["human_story", "title", "genre"]
     
+    def load_data(self, csv_path: str):
+        """Load and validate creative writing data."""
+        import pandas as pd
+        df = pd.read_csv(csv_path)
+        
+        # Check required columns
+        required_cols = self.get_data_columns()
+        missing_cols = set(required_cols) - set(df.columns)
+        if missing_cols:
+            raise ValueError(f"Missing required columns for {self.__class__.__name__}: {missing_cols}")
+        
+        # Clean data
+        df = df.dropna(subset=['title', 'human_story'])
+        df['genre'] = df['genre'].fillna('General Fiction')
+        
+        return df
+    
     def get_generator_prompt(self, sample: Dict[str, Any]) -> str:
         """Generate creative writing prompt."""
         title = sample.get("title", "Untitled")

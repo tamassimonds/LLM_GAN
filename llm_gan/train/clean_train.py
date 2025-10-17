@@ -12,7 +12,7 @@ from torch.optim import AdamW
 
 from llm_gan.prompts import llm_generator_prompt
 from llm_gan.utils.parse import parse_tags
-from .dataset import StoryDataset
+# Domain dataset imported inline where needed
 from .inference import simple_generate
 from .evaluation import assess_judge_with_outputs, calculate_rewards
 from .training import calculate_log_probs, reinforce_update, ppo_update

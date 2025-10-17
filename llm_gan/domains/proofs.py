@@ -11,6 +11,23 @@ class ProofsDomain(BaseDomain):
         """Return required CSV columns for proofs."""
         return ["problem", "human_solution", "source"]
     
+    def load_data(self, csv_path: str):
+        """Load and validate proofs data."""
+        import pandas as pd
+        df = pd.read_csv(csv_path)
+        
+        # Check required columns
+        required_cols = self.get_data_columns()
+        missing_cols = set(required_cols) - set(df.columns)
+        if missing_cols:
+            raise ValueError(f"Missing required columns for {self.__class__.__name__}: {missing_cols}")
+        
+        # Clean data
+        df = df.dropna(subset=['problem', 'human_solution'])
+        df['source'] = df['source'].fillna('Unknown')
+        
+        return df
+    
     def get_generator_prompt(self, sample: Dict[str, Any]) -> str:
         """Generate proof prompt."""
         problem = sample.get("problem", "")

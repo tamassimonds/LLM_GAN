@@ -16,12 +16,7 @@ class BaseDomain(ABC):
     @abstractmethod
     def load_data(self, csv_path: str) -> pd.DataFrame:
         """Load and validate domain-specific data."""
-        df = pd.read_csv(csv_path)
-        required_cols = self.get_data_columns()
-        missing_cols = set(required_cols) - set(df.columns)
-        if missing_cols:
-            raise ValueError(f"Missing required columns for {self.__class__.__name__}: {missing_cols}")
-        return df
+        pass
     
     @abstractmethod
     def get_generator_prompt(self, sample: Dict[str, Any]) -> str:
@@ -37,7 +32,7 @@ class BaseDomain(ABC):
     def extract_output(self, generated_text: str) -> str:
         """Extract output from generated text (from <output> tags)."""
         # Default implementation that works for most domains
-        from llm_gan.utils.parsing import parse_tags
+        from llm_gan.utils.parse import parse_tags
         
         # Try to get output from <output> tags
         outputs = parse_tags(generated_text, "output")
