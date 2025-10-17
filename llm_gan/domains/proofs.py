@@ -53,7 +53,7 @@ Put your solution inside <output> tags like this:
         
         return f"""<|begin_of_text|><|start_header_id|>user<|end_header_id|>
 
-You need to determine which mathematical solution is better.
+You are comparing two mathematical solutions. DO NOT solve the problem yourself. Just evaluate which of the two given solutions is better.
 
 Problem:
 {problem}
@@ -64,7 +64,13 @@ SOLUTION 1:
 SOLUTION 2:
 {output2}
 
-Evaluate based on correctness, clarity, rigor, and completeness.
+Compare the solutions based on:
+- Mathematical correctness
+- Clarity of explanation  
+- Logical rigor
+- Completeness of proof
+
+DO NOT solve the problem from scratch. Only evaluate the quality of the two given solutions.
 
 Give your reasoning briefly, then put your final answer in \\boxed{{1}} or \\boxed{{2}} to indicate which solution is better.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
@@ -75,28 +81,27 @@ Give your reasoning briefly, then put your final answer in \\boxed{{1}} or \\box
         # First try the standard extraction
         output = super().extract_output(generated_text)
         
-        # For proofs, also look for content in \boxed{} if present
-        if "\\boxed{" in output:
-            # Extract the main proof, not just the boxed answer
-            # The proof should be everything before or around the boxed answer
-            parts = output.split("\\boxed{")
-            if parts[0].strip():
-                # Use the part before the boxed answer as the main proof
-                output = parts[0].strip()
+        # Debug: print what we extracted
+        print(f"DEBUG: Extracted output length: {len(output)}, preview: {output[:200]}...")
         
-        # Check for placeholder text specific to proofs
-        placeholder_patterns = [
+        # Only check for very obvious placeholder patterns (be less aggressive)
+        obvious_placeholders = [
             "your solution here",
-            "your complete solution",
-            "solution here",
+            "your complete solution here", 
             "[solution]",
-            "insert solution"
+            "solution: [mathematical proof]"
         ]
         
         output_lower = output.lower().strip()
-        for pattern in placeholder_patterns:
-            if pattern in output_lower and len(output) < 100:
-                return "Solution: [Mathematical proof]"  # Fallback
+        for pattern in obvious_placeholders:
+            if output_lower == pattern or (pattern in output_lower and len(output) < 50):
+                print(f"DEBUG: Detected placeholder pattern: {pattern}")
+                return "I need to solve this mathematical problem step by step."  # Better fallback
+        
+        # For proofs, also look for content in \boxed{} if present
+        if "\\boxed{" in output:
+            # Keep the whole proof including the boxed answer
+            print("DEBUG: Found boxed answer in proof")
         
         return output
     
