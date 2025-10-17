@@ -502,7 +502,7 @@ def train_llm_gan(
                     print("  Training generator with PPO...")
                     generator_model.train()
                     generator_log_probs, generator_ref_log_probs = calculate_log_probs(
-                        generator_model, tokenizer, generator_prompts, generated_stories, generator_ref_model
+                        generator_model, tokenizer, generator_prompts, generated_outputs, generator_ref_model
                     )
                     generator_loss = ppo_update(
                         generator_model, generator_optimizer, generator_log_probs, generator_ref_log_probs, 
@@ -521,7 +521,7 @@ def train_llm_gan(
                 else:
                     print("  Training generator with REINFORCE...")
                     generator_model.train()
-                    generator_log_probs = calculate_log_probs(generator_model, tokenizer, generator_prompts, generated_stories)
+                    generator_log_probs = calculate_log_probs(generator_model, tokenizer, generator_prompts, generated_outputs)
                     generator_loss = reinforce_update(generator_model, generator_optimizer, generator_log_probs, generator_rewards)
                     
                     print("  Training judge with REINFORCE...")
