@@ -49,16 +49,16 @@ def assess_judge(titles: List[str], genres: List[str], stories_human: List[str],
     return correct
 
 
-def assess_judge_with_outputs(titles: List[str], genres: List[str], stories_human: List[str], 
-                            stories_ai: List[str], judge_model, tokenizer, 
+def assess_judge_with_outputs(batch_items, domain_obj, outputs_human: List[str], 
+                            outputs_ai: List[str], judge_model, tokenizer, 
                             max_tokens: int = 512) -> Tuple[List[bool], Dict[str, Any]]:
     """Assess judge performance and return detailed outputs."""
-    targets = [random.randint(0, 1) for _ in range(len(titles))]
+    targets = [random.randint(0, 1) for _ in range(len(batch_items))]
     
     prompts = []
-    for title, genre, human_story, ai_story, target in zip(titles, genres, stories_human, stories_ai, targets):
-        story_order = (human_story, ai_story) if target == 0 else (ai_story, human_story)
-        prompt = llm_generator_discriminator_prompt(title, genre, *story_order)
+    for item, human_output, ai_output, target in zip(batch_items, outputs_human, outputs_ai, targets):
+        output_order = (human_output, ai_output) if target == 0 else (ai_output, human_output)
+        prompt = domain_obj.get_judge_prompt(output_order[0], output_order[1], item)
         prompts.append(prompt)
     
     judge_outputs = simple_generate(

@@ -147,8 +147,8 @@ def cleanup_distributed_safe():
         # Don't raise - this is cleanup, we want to continue
 
 
-def extract_story_from_generation(story_text: str, title: str, genre: str) -> str:
-    """Extract story content from generated text."""
+def extract_output_from_generation(generated_text: str, title: str = "", genre: str = "") -> str:
+    """Extract output content from generated text."""
     
     def is_placeholder_text(text: str) -> bool:
         """Check if text is placeholder content."""
@@ -187,56 +187,56 @@ def extract_story_from_generation(story_text: str, title: str, genre: str) -> st
             
         return False
     
-    # First try to get story from <story> tags, but exclude placeholders
-    all_stories = parse_tags(story_text, "story")
-    story = None
+    # First try to get output from <output> tags, but exclude placeholders
+    all_outputs = parse_tags(generated_text, "output")
+    output = None
     
-    if isinstance(all_stories, list):
-        # Multiple story tags found - filter out placeholders
-        for s in all_stories:
-            if s and not is_placeholder_text(s) and len(s) > 50:
-                story = s
+    if isinstance(all_outputs, list):
+        # Multiple output tags found - filter out placeholders
+        for o in all_outputs:
+            if o and not is_placeholder_text(o) and len(o) > 50:
+                output = o
                 break
-    elif all_stories and not is_placeholder_text(all_stories):
-        story = all_stories
+    elif all_outputs and not is_placeholder_text(all_outputs):
+        output = all_outputs
     
-    if story is None:
-        # Try to get content from <STORY> tags (uppercase)
-        uppercase_story = parse_tags(story_text, "STORY")
-        if uppercase_story and not is_placeholder_text(uppercase_story):
-            story = uppercase_story
+    if output is None:
+        # Try to get content from <OUTPUT> tags (uppercase)
+        uppercase_output = parse_tags(generated_text, "OUTPUT")
+        if uppercase_output and not is_placeholder_text(uppercase_output):
+            output = uppercase_output
     
-    if story is None:
-        # Look for content after assistant header - this is where the actual story is
-        if "assistant" in story_text:
+    if output is None:
+        # Look for content after assistant header - this is where the actual output is
+        if "assistant" in generated_text:
             # Split on assistant and get the last part
-            parts = story_text.split("assistant")
+            parts = generated_text.split("assistant")
             if len(parts) > 1:
                 content = parts[-1].strip()
                 # Take the first substantial paragraph
                 lines = content.split('\n')
-                story_lines = []
+                output_lines = []
                 for line in lines:
                     line = line.strip()
                     if line and not line.startswith('<') and len(line) > 10:
-                        story_lines.append(line)
-                if story_lines:
-                    potential_story = ' '.join(story_lines)
-                    if not is_placeholder_text(potential_story):
-                        story = potential_story
+                        output_lines.append(line)
+                if output_lines:
+                    potential_output = ' '.join(output_lines)
+                    if not is_placeholder_text(potential_output):
+                        output = potential_output
     
     # Final fallback - but still check for placeholders
-    if not story or is_placeholder_text(story):
-        fallback_story = f"A {genre.lower()} story about {title}."
-        story = fallback_story
+    if not output or is_placeholder_text(output):
+        fallback_output = f"A {genre.lower() if genre else 'generated'} output about {title if title else 'this topic'}."
+        output = fallback_output
     
     # Clean up and limit length
-    if story and len(story) > 10:
-        story = ' '.join(story.split())[:512]
+    if output and len(output) > 10:
+        output = ' '.join(output.split())[:512]
     else:
-        story = f"A {genre.lower()} story titled '{title}'."
+        output = f"A {genre.lower() if genre else 'generated'} output titled '{title if title else 'Untitled'}'."
         
-    return story
+    return output
 
 
 def train_llm_gan(
@@ -255,9 +255,18 @@ def train_llm_gan(
     checkpoint_freq: int = 20,
     use_ppo: bool = False,
     clip_eps: float = 0.2,
-    entropy_coef: float = 0.01
+    entropy_coef: float = 0.01,
+    domain: str = None
 ):
     """Main training function for LLM GAN with DDP support."""
+    
+    # Import domain system
+    from llm_gan.domains import DomainRegistry
+    
+    # Create domain instance
+    domain_obj = DomainRegistry.create_domain(csv_path=data_path, domain_name=domain)
+    if hasattr(domain_obj, '__class__'):
+        print(f"Using domain: {domain_obj.__class__.__name__}")
     
     try:
         # Setup distributed training with error handling
@@ -302,7 +311,9 @@ def train_llm_gan(
         def collate_fn(batch):
             return batch
         
-        dataset = StoryDataset(data_path, min_story_length=min_story_length)
+        # Use domain-aware dataset
+        from llm_gan.train.domain_dataset import DomainDataset
+        dataset = DomainDataset(domain_obj, data_path, min_output_length=min_story_length)
         
         # Setup distributed sampler
         if world_size > 1:
@@ -412,15 +423,21 @@ def train_llm_gan(
             for batch_idx, batch in enumerate(dataloader):
                 print(f"Processing batch {batch_idx+1}/{len(dataloader)}...")
                 
-                titles = [item['title'] for item in batch]
-                genres = [item['genre'] for item in batch] 
-                human_stories = [item['human_story'] for item in batch]
+                # Extract data based on domain
+                human_outputs = []
+                for item in batch:
+                    if 'human_output' in item:
+                        human_outputs.append(item['human_output'])
+                    elif 'human_story' in item:
+                        human_outputs.append(item['human_story'])
+                    elif 'human_solution' in item:
+                        human_outputs.append(item['human_solution'])
                 
-                # Generate stories with generator
-                generator_prompts = [llm_generator_prompt(title, genre) for title, genre in zip(titles, genres)]
+                # Generate prompts using domain
+                generator_prompts = [domain_obj.get_generator_prompt(item) for item in batch]
                 
-                print("  Generating stories...")
-                generated_stories_raw = simple_generate(
+                print("  Generating outputs...")
+                generated_outputs_raw = simple_generate(
                     model=generator_model,
                     tokenizer=tokenizer,
                     prompts=generator_prompts,
@@ -429,23 +446,23 @@ def train_llm_gan(
                     batch_size=batch_size
                 )
                 
-                # Extract stories from generated text
-                generated_stories = [
-                    extract_story_from_generation(story_text, titles[i], genres[i]) 
-                    for i, story_text in enumerate(generated_stories_raw)
+                # Extract outputs from generated text using domain
+                generated_outputs = [
+                    domain_obj.extract_output(output_text) 
+                    for output_text in generated_outputs_raw
                 ]
                 
-                print("  Judging stories...")
-                # Clip stories to equal length for fair comparison, but enforce minimum length
+                print("  Judging outputs...")
+                # Clip outputs to equal length for fair comparison, but enforce minimum length
                 min_words = 128  # Minimum word count to prevent gaming
                 
-                clipped_human_stories = []
-                clipped_generated_stories = []
+                clipped_human_outputs = []
+                clipped_generated_outputs = []
                 
-                for human_story, generated_story in zip(human_stories, generated_stories):
+                for human_output, generated_output in zip(human_outputs, generated_outputs):
                     # Clip to max length first
-                    human_clipped = human_story[:max_story_length]
-                    generated_clipped = generated_story[:max_story_length]
+                    human_clipped = human_output[:max_story_length]
+                    generated_clipped = generated_output[:max_story_length]
                     
                     # Count words (rough approximation: chars/5)
                     human_word_count = len(human_clipped.split())
@@ -454,17 +471,18 @@ def train_llm_gan(
                     # If either story is too short, penalize by padding or truncating to min viable comparison
                     if human_word_count < min_words or generated_word_count < min_words:
                         # Use max_story_length for both to ensure fair comparison of longer content
-                        clipped_human_stories.append(human_clipped)
-                        clipped_generated_stories.append(generated_clipped)
+                        clipped_human_outputs.append(human_clipped)
+                        clipped_generated_outputs.append(generated_clipped)
                     else:
                         # Both stories meet minimum length, clip to same actual length
                         min_length = min(len(human_clipped), len(generated_clipped))
-                        clipped_human_stories.append(human_clipped[:min_length])
-                        clipped_generated_stories.append(generated_clipped[:min_length])
+                        clipped_human_outputs.append(human_clipped[:min_length])
+                        clipped_generated_outputs.append(generated_clipped[:min_length])
                 
-                # Judge the stories
+                # Judge the outputs using domain prompts
+                # For now, we'll pass batch items to reconstruct prompts
                 judge_correct, judge_outputs = assess_judge_with_outputs(
-                    titles, genres, clipped_human_stories, clipped_generated_stories, 
+                    batch, domain_obj, clipped_human_outputs, clipped_generated_outputs, 
                     judge_model, tokenizer, max_judge_tokens
                 )
                 
@@ -531,17 +549,17 @@ def train_llm_gan(
                         "judge_reward_mean": np.mean(judge_rewards)
                     })
                     
-                    # Save detailed logs
+                    # Save detailed logs (domain-agnostic format)
                     batch_log = {
+                        'domain': domain_obj.__class__.__name__.replace('Domain', '').lower(),
                         'epoch': epoch,
                         'batch_idx': batch_idx,
                         'step': step,
-                        'titles': titles,
-                        'genres': genres,
-                        'human_stories': human_stories,
+                        'batch_items': batch,
+                        'human_outputs': human_outputs,
                         'generator_prompts': generator_prompts,
-                        'generated_stories_raw': generated_stories_raw,
-                        'generated_stories': generated_stories,
+                        'generated_outputs_raw': generated_outputs_raw,
+                        'generated_outputs': generated_outputs,
                         'judge_data': judge_outputs,
                         'judge_accuracy': accuracy,
                         'generator_rewards': generator_rewards,

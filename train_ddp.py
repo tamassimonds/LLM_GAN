@@ -21,6 +21,8 @@ def main():
                         help='Model name from HuggingFace')
     parser.add_argument('--data_path', type=str, default='data/stories.csv',
                         help='Path to training data CSV')
+    parser.add_argument('--domain', type=str, default=None,
+                        help='Domain type (creative_writing, proofs). Auto-detected if not specified.')
     
     # Training arguments
     parser.add_argument('--batch_size', type=int, default=32,
@@ -77,7 +79,8 @@ def main():
         checkpoint_freq=args.checkpoint_freq,
         use_ppo=args.use_ppo,
         clip_eps=args.clip_eps,
-        entropy_coef=args.entropy_coef
+        entropy_coef=args.entropy_coef,
+        domain=args.domain
     )
 
 if __name__ == '__main__':

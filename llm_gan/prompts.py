@@ -28,7 +28,7 @@ Write a creative story in the {genre} genre with the title "{title}".
 
 Make the story feel human-written and engaging. Write approximately 200-300 words.
 
-Put your story inside <story> tags like this:
-<story>Your story here</story><|eot_id|><|start_header_id|>assistant<|end_header_id|>
+Put your story inside <output> tags like this:
+<output>Your story here</output><|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 """
