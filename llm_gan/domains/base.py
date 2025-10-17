@@ -28,10 +28,20 @@ class BaseDomain(ABC):
         """Generate prompt for the judge model to compare two outputs."""
         pass
     
-    @abstractmethod
-    def extract_output(self, generated_text: str) -> str:
-        """Extract output from generated text (from <output> tags)."""
-        # Default implementation that works for most domains
+    def extract_output(self, generated_text: str, use_tags: bool = True) -> str:
+        """Extract output from generated text.
+        
+        Args:
+            generated_text: The raw generated text
+            use_tags: If True, look for <output> tags. If False, take whole output after assistant.
+        """
+        if use_tags:
+            return self._extract_with_tags(generated_text)
+        else:
+            return self._extract_without_tags(generated_text)
+    
+    def _extract_with_tags(self, generated_text: str) -> str:
+        """Extract output using <output> tags."""
         from llm_gan.utils.parse import parse_tags
         
         # Try to get output from <output> tags
@@ -49,12 +59,19 @@ class BaseDomain(ABC):
             return outputs
             
         # Fallback: return everything after assistant header
+        return self._extract_without_tags(generated_text)
+    
+    def _extract_without_tags(self, generated_text: str) -> str:
+        """Extract output without using tags - take everything after assistant."""
         if "assistant" in generated_text:
             parts = generated_text.split("assistant")
             if len(parts) > 1:
-                return parts[-1].strip()[:512]
+                content = parts[-1].strip()
+                # Clean up common chat formatting
+                content = content.replace("<|eot_id|>", "").strip()
+                return content
         
-        return generated_text[:512]
+        return generated_text.strip()
     
     @abstractmethod
     def get_evaluation_criteria(self) -> List[str]:

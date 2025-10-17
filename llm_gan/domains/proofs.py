@@ -39,10 +39,7 @@ Solve the following problem{f' from {source}' if source else ''}:
 
 {problem}
 
-Provide a clear, rigorous mathematical proof with all steps explained.
-
-Put your solution inside <output> tags like this:
-<output>Your complete solution here</output><|eot_id|><|start_header_id|>assistant<|end_header_id|>
+Provide a clear, rigorous mathematical proof with all steps explained.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 """
         return prompt
@@ -76,32 +73,16 @@ Give your reasoning briefly, then put your final answer in \\boxed{{1}} or \\box
 
 """
     
-    def extract_output(self, generated_text: str) -> str:
-        """Extract proof from generated text."""
-        # First try the standard extraction
-        output = super().extract_output(generated_text)
+    def extract_output(self, generated_text: str, use_tags: bool = False) -> str:
+        """Extract proof from generated text. 
+        
+        For proofs, we default to use_tags=False to get the whole solution.
+        """
+        # Use no tags by default for proofs - just get everything after assistant
+        output = super().extract_output(generated_text, use_tags=use_tags)
         
         # Debug: print what we extracted
         print(f"DEBUG: Extracted output length: {len(output)}, preview: {output[:200]}...")
-        
-        # Only check for very obvious placeholder patterns (be less aggressive)
-        obvious_placeholders = [
-            "your solution here",
-            "your complete solution here", 
-            "[solution]",
-            "solution: [mathematical proof]"
-        ]
-        
-        output_lower = output.lower().strip()
-        for pattern in obvious_placeholders:
-            if output_lower == pattern or (pattern in output_lower and len(output) < 50):
-                print(f"DEBUG: Detected placeholder pattern: {pattern}")
-                return "I need to solve this mathematical problem step by step."  # Better fallback
-        
-        # For proofs, also look for content in \boxed{} if present
-        if "\\boxed{" in output:
-            # Keep the whole proof including the boxed answer
-            print("DEBUG: Found boxed answer in proof")
         
         return output
     
