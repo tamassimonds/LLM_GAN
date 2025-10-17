@@ -2,6 +2,10 @@
 
 A Generative Adversarial Network implementation where two LLMs (generator and judge) train adversarially to generate high-quality content across multiple domains.
 
+Judge model is training to detect human vs ai generated. Agent model training to fool judge
+
+Goal is to make it easier to extend RL to non verfiable domains 
+
 ## Project Structure
 
 ```
